@@ -40,3 +40,7 @@ CREATE TABLE provider_certifications (
     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (provider_id) REFERENCES service_providers(provider_id)
 );
+ALTER TABLE provider_certifications
+ADD CONSTRAINT fk_provider_certifications_provider FOREIGN KEY (provider_id) REFERENCES service_providers(provider_id) ON DELETE CASCADE;
+SHOW CREATE TABLE provider_certifications;
+ALTER TABLE provider_certifications DROP FOREIGN KEY provider_certifications_ibfk_1;
