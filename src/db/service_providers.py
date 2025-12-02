@@ -1,4 +1,7 @@
-from rds_main import get_connection
+try:
+    from .rds_main import get_connection
+except ImportError:
+    from rds_main import get_connection
 
 def create_service_provider_in_db(data):
     conn = get_connection()
