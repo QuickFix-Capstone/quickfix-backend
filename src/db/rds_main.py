@@ -1,9 +1,12 @@
 import os
 import pymysql
 from dotenv import load_dotenv
+from pymysql.constants import FIELD_TYPE
 
 # Load environment variables from .env file
 load_dotenv()
+# decimal_to_float = {FIELD_TYPE.DECIMAL: float}
+
 
 def get_connection():
     """
@@ -15,7 +18,8 @@ def get_connection():
             user=os.getenv("MYSQL_USER"),
             password=os.getenv("MYSQL_PASSWORD"),
             database=os.getenv("MYSQL_DB"),
-            cursorclass=pymysql.cursors.DictCursor
+            cursorclass=pymysql.cursors.DictCursor,
+            # conv=decimal_to_float
         )
         return connection
     except pymysql.MySQLError as e:

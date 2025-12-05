@@ -141,14 +141,14 @@ if __name__ == "__main__":
         "body": json.dumps(
             {
                 "provider_id": 5,
-                "title": "Ceiling fan installation",
-                "category": "electrician",
-                "price": 150.0,
-                "description": "Install ceiling fan in bedroom.",
-                "city": "Toronto",
+                "title": "Air conditioning installation",
+                "category": "HVAC",
+                "price": 1150.0,
+                "description": "Install air conditioning in bedroom.",
+                "city": "Waterloo",
                 "state": "ON",
-                "postal_code": "M5H 1K2",
-                "availability": "2025-01-12T14:30",
+                "postal_code": "N2L 3G5",
+                "availability": "2025-12-05T14:30",
             }
         )
     }
