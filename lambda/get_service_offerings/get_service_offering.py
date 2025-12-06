@@ -5,7 +5,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 import json
 from typing import Any, Dict
 from pymysql.err import IntegrityError
-from src.db.rds_main import get_connection
+# from db.rds_main import get_connection
+from db.rds_main import get_connection
 
 
 def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
@@ -67,9 +68,9 @@ def handler(event, context):
             pass
 
 
-# Local test
-if __name__ == "__main__":
-    event = {
-        "queryStringParameters": {"provider_id": "5"}
-    }
-    print(json.dumps(handler(event, None), indent=2))
+# # Local test
+# if __name__ == "__main__":
+#     event = {
+#         "queryStringParameters": {"provider_id": "5"}
+#     }
+#     print(json.dumps(handler(event, None), indent=2))

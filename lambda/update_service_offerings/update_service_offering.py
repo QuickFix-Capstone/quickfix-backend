@@ -5,7 +5,8 @@ import json
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
 sys.path.append(PROJECT_ROOT)
 print("Python path updated with:", PROJECT_ROOT)
-from src.db.rds_main import get_connection
+# from src.db.rds_main import get_connection
+from db.rds_main import get_connection
 
 
 def _parse_body(event):
@@ -70,12 +71,12 @@ def handler(event, context):
         conn.close()
 
 
-if __name__ == "__main__":
-    test_event = {
-        "body": json.dumps({
-            "offering_id": 3,
-            "price": 120,
-            "city": "Brampton"
-        })
-    }
-    print(json.dumps(handler(test_event, None), indent=2))
+# if __name__ == "__main__":
+#     test_event = {
+#         "body": json.dumps({
+#             "offering_id": 3,
+#             "price": 120,
+#             "city": "Brampton"
+#         })
+#     }
+#     print(json.dumps(handler(test_event, None), indent=2))

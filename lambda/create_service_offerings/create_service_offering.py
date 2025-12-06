@@ -1,19 +1,12 @@
 import json
 from typing import Any, Dict
 from pymysql.err import IntegrityError
-import sys,os
+import sys, os
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
-sys.path.append(PROJECT_ROOT)
-
-print("Python path updated with:", PROJECT_ROOT)
-from src.db.rds_main import get_connection
+from db.rds_main import get_connection
 
 
 def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Support API Gateway or local testing.
-    """
     if "body" not in event:
         return event
 
@@ -34,29 +27,17 @@ def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
 def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "statusCode": status_code,
-        "headers": {"Content-Type": "application/json"},
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "http://localhost:5173",
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Allow-Methods": "OPTIONS,GET,POST,PUT,DELETE",
+        },
         "body": json.dumps(body),
     }
 
 
 def handler(event, context):
-    """
-    Lambda: Create a service offering
-
-    Expected JSON body:
-    {
-      "provider_id": 1,
-      "title": "Fix leaking sink",
-      "category": "plumber",
-      "price": 120.50,
-      "description": "Leak under the kitchen sink.",
-      "city": "Toronto",
-      "state": "ON",
-      "postal_code": "M5H 2N2",
-      "availability": "2025-01-10T14:00"
-    }
-    """
-
     # 1. Parse request body
     try:
         data = _parse_body(event)
@@ -75,7 +56,7 @@ def handler(event, context):
     # 2. Connect to RDS
     conn = get_connection()
     if not conn:
-        return _response(500, {"message": "Database connection failed"})
+        return __response(500, {"message": "Database connection failed"})
 
     try:
         with conn.cursor() as cur:
@@ -133,25 +114,3 @@ def handler(event, context):
             conn.close()
         except Exception:
             pass
-
-
-# Local test helper
-if __name__ == "__main__":
-    test_event = {
-        "body": json.dumps(
-            {
-                "provider_id": 5,
-                "title": "Air conditioning installation",
-                "category": "HVAC",
-                "price": 1150.0,
-                "description": "Install air conditioning in bedroom.",
-                "city": "Waterloo",
-                "state": "ON",
-                "postal_code": "N2L 3G5",
-                "availability": "2025-12-05T14:30",
-            }
-        )
-    }
-
-    print("Testing create_service_offering handler()...")
-    print(json.dumps(handler(test_event, None), indent=2))
