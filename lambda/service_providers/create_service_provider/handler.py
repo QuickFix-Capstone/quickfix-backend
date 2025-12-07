@@ -1,35 +1,25 @@
 import json
-import os
-import sys
 import logging
 import base64
+import os
+import sys
 from typing import Any, Dict
+
+# Ensure src is in path for imports
+CURRENT_DIR = os.path.dirname(os.path.realpath(__file__))
+ROOT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, "..", "..", ".."))
+
+# Add ROOT_DIR to sys.path so we can do 'from src.X import Y'
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+from src.db.rds_main import get_connection
+from src.s3.upload import upload_file
+from pymysql.err import IntegrityError
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# --------------------------------------------------------------------
-# Make sure we can import from src/ (db, s3, etc.)
-# This assumes final zip has:
-#   /var/task/handler.py
-#   /var/task/src/...
-# --------------------------------------------------------------------
-CURRENT_DIR = os.path.dirname(os.path.realpath(__file__))
-ROOT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, "..", "..", ".."))
-SRC_DIR = os.path.join(ROOT_DIR, "src")
-
-if SRC_DIR not in sys.path:
-    sys.path.insert(0, SRC_DIR)
-
-# Now we can import shared modules
-from db.service_providers import create_service_provider_in_db
-from db.provider_certifications import add_provider_certification
-from s3.upload import upload_file
-
-
-# --------------------------------------------------------------------
-# Helpers
-# --------------------------------------------------------------------
 def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
     """
     Support both:
@@ -38,7 +28,6 @@ def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
     """
     body = event.get("body")
     if body is None:
-        # Maybe event itself is already the data
         if isinstance(event, dict):
             return event
         return {}
@@ -63,24 +52,10 @@ def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-# --------------------------------------------------------------------
-# Lambda handler
-# --------------------------------------------------------------------
 def handler(event, context):
     """
     Create a new service provider and (optionally) one certification.
-
-    Expected body includes provider fields like:
-      email, first_name, last_name, phone, business_name, bio,
-      category, city, state, postal_code
-
-    For certificate, supports either:
-      - cert_url               (already uploaded to S3)
-      - OR cert_file_base64 + cert_filename (upload via this Lambda)
-    And optional:
-      - cert_type
     """
-
     logger.info("Received event: %s", json.dumps(event))
 
     # 1) Parse body
@@ -102,119 +77,137 @@ def handler(event, context):
             },
         )
 
-    # 3) Create service provider in DB
-    provider_result = create_service_provider_in_db(data)
-    if not provider_result.get("success"):
-        error_msg = provider_result.get("error", "Failed to create service provider")
-        logger.error("create_service_provider_in_db failed: %s", error_msg)
-        return _response(
-            500,
-            {
-                "success": False,
-                "message": "Failed to create service provider",
-                "error": error_msg,
-            },
-        )
+    # 3) Connect to DB
+    conn = get_connection()
+    if not conn:
+        return _response(500, {"success": False, "message": "Database connection failed"})
 
-    provider_id = provider_result["provider_id"]
-
-    # ----------------------------------------------------------------
-    # 4) Handle certification (optional)
-    # ----------------------------------------------------------------
+    provider_id = None
+    cert_id = None
     cert_url = data.get("cert_url")
     cert_type = data.get("cert_type")
     cert_file_base64 = data.get("cert_file_base64")
     cert_filename = data.get("cert_filename") or "certificate.jpg"
-
-    # Option B: if no cert_url but a base64 file is provided, upload to S3
-    if not cert_url and cert_file_base64:
-        try:
-            file_bytes = base64.b64decode(cert_file_base64)
-        except Exception:
-            return _response(
-                400,
-                {
-                    "success": False,
-                    "message": "Invalid cert_file_base64; cannot decode.",
-                },
+    
+    try:
+        # Handle S3 upload if needed (before DB or after? strict logic might imply transaction, 
+        # but S3 isn't transactional. Let's do S3 first or after? create_customer doesn't have this.
+        # I'll keep the order: DB insert first to get ID, then S3, then Cert insert.)
+        
+        with conn.cursor() as cur:
+            # A) Insert Service Provider
+            sql_provider = """
+                INSERT INTO service_providers
+                    (email, first_name, last_name, phone, business_name, 
+                     bio, category, city, state, postal_code)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            cur.execute(
+                sql_provider,
+                (
+                    data.get("email"),
+                    data.get("first_name"),
+                    data.get("last_name"),
+                    data.get("phone"),
+                    data.get("business_name"),
+                    data.get("bio"),
+                    data.get("category"),
+                    data.get("city"),
+                    data.get("state"),
+                    data.get("postal_code"),
+                ),
             )
+            provider_id = cur.lastrowid
+            
+            # B) Handle Certification
+            # If base64 provided, upload to S3 now
+            if not cert_url and cert_file_base64:
+                try:
+                    file_bytes = base64.b64decode(cert_file_base64)
+                    upload_result = upload_file(file_bytes, cert_filename, folder="certifications")
+                    if upload_result.get("success"):
+                        cert_url = upload_result["url"]
+                    else:
+                        logger.error("S3 upload failed: %s", upload_result.get("error"))
+                        # We could raise an exception to rollback provider, strict preference?
+                        # For now, let's just log and continue or fail?
+                        # If S3 fails, maybe we shouldn't fail the provider creation? 
+                        # But the user might expect a cert.
+                        # I'll assume soft fail on cert for now or throw to rollback.
+                        raise Exception(f"S3 Upload failed: {upload_result.get('error')}")
+                except Exception as e:
+                    # Reraise to trigger rollback
+                    raise e
+            
+            # If we have a cert_url (either passed in or uploaded), insert cert record
+            if cert_url:
+                sql_cert = """
+                    INSERT INTO provider_certifications (provider_id, cert_url, cert_type)
+                    VALUES (%s, %s, %s)
+                """
+                cur.execute(sql_cert, (provider_id, cert_url, cert_type))
+                cert_id = cur.lastrowid
 
-        upload_result = upload_file(file_bytes, cert_filename, folder="certifications")
-        if not upload_result.get("success"):
-            logger.error("S3 upload failed: %s", upload_result.get("error"))
-            # You could also roll back the provider here if you want strict consistency
-            return _response(
-                500,
-                {
-                    "success": False,
-                    "message": "Provider created but failed to upload certification to S3",
-                    "provider_id": provider_id,
-                    "error": upload_result.get("error"),
-                },
-            )
+            conn.commit()
 
-        cert_url = upload_result["url"]
-
-    cert_id = None
-    if cert_url:
-        cert_result = add_provider_certification(
-            provider_id=provider_id,
-            cert_url=cert_url,
-            cert_type=cert_type,
+        # 4) Success Response
+        return _response(
+            201,
+            {
+                "success": True,
+                "message": "Service provider created successfully",
+                "provider_id": provider_id,
+                "certification": {
+                    "cert_id": cert_id,
+                    "cert_url": cert_url,
+                    "cert_type": cert_type,
+                } if cert_url else None,
+            },
         )
 
-        if not cert_result.get("success"):
-            logger.error("add_provider_certification failed: %s", cert_result.get("error"))
-            # Provider exists, but cert failed
-            return _response(
-                500,
-                {
-                    "success": False,
-                    "message": "Provider created but failed to save certification record",
-                    "provider_id": provider_id,
-                    "error": cert_result.get("error"),
-                },
+    except IntegrityError as e:
+        # Check for duplicate email
+        if "Duplicate entry" in str(e):
+             return _response(
+                409,
+                {"success": False, "message": "A service provider with this email already exists."},
             )
+        return _response(
+            400,
+            {"success": False, "message": "Failed to create service provider due to data constraint.", "error": str(e)},
+        )
+    except Exception as e:
+        logger.error("Unexpected error: %s", e)
+        # Rollback is automatic on exception exit of 'with conn.cursor()' block? 
+        # Actually in pymysql, if commit() isn't called, it rolls back on close.
+        # But we should be careful. 
+        # The 'with conn.cursor()' only closes cursor. Connection rollback is needed if commit wasn't reached.
+        try:
+            conn.rollback()
+        except:
+            pass
+            
+        return _response(
+            500,
+            {"success": False, "message": "Internal server error.", "error": str(e)},
+        )
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
-        cert_id = cert_result["cert_id"]
 
-    # ----------------------------------------------------------------
-    # 5) Final success response
-    # ----------------------------------------------------------------
-    return _response(
-        201,
-        {
-            "success": True,
-            "message": "Service provider created successfully",
-            "provider_id": provider_id,
-            "certification": {
-                "cert_id": cert_id,
-                "cert_url": cert_url,
-                "cert_type": cert_type,
-            }
-            if cert_url
-            else None,
-        },
-    )
-
-
-# --------------------------------------------------------------------
-# Optional: local test
-# --------------------------------------------------------------------
 if __name__ == "__main__":
-    # Local test: provider with base64 cert -> Lambda uploads to S3
-    # Base64 for a 1x1 white PNG
+    # Local test
     dummy_base64_image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNiAAAAAgABKlx+MAAAAABJRU5ErkJggg=="
-    
     test_event = {
         "body": json.dumps(
             {
-                "email": "pro2@test.com",
+                "email": "pro3@test.com",
                 "first_name": "Jack",
                 "last_name": "Lee",
                 "category": "electrician",
-
-                # force S3 path by not using cert_url
                 "cert_url": None,
                 "cert_file_base64": dummy_base64_image,
                 "cert_filename": "license.jpg",
@@ -223,7 +216,7 @@ if __name__ == "__main__":
         )
     }
 
-    print("🔍 Running local test for create_service_provider.handler()...")
+    print("Running local test...")
+    # Mocking environment or assuming DB is reachable
     resp = handler(test_event, None)
-    print("Response:")
     print(json.dumps(resp, indent=2))
