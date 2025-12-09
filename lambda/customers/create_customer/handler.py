@@ -1,7 +1,7 @@
 import json
 from typing import Any, Dict
 
-from src.db import get_connection
+from src.db.rds_main import get_connection
 from pymysql.err import IntegrityError
 
 
