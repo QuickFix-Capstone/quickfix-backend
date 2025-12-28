@@ -1,0 +1,1 @@
+You can only create new accounts if you've signed up for Connect, which you can learn how to do at https://stripe.com/docs/connect.
