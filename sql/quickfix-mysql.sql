@@ -13,49 +13,38 @@ CREATE TABLE customers (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE service_providers (
-    provider_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    email VARCHAR(255) NOT NULL,
-    first_name VARCHAR(100) NOT NULL,
-    last_name VARCHAR(100) NOT NULL,
-    phone VARCHAR(20) NULL,
-    business_name VARCHAR(255) NULL,
-    bio TEXT NULL,
-    category VARCHAR(100) NOT NULL,
-    -- plumber, electrician, tutor, etc.
-    rating DECIMAL(3, 2) DEFAULT 0.00,
-    -- avg rating like 4.75
-    city VARCHAR(100) NULL,
-    state VARCHAR(100) NULL,
-    postal_code VARCHAR(20) NULL,
-    is_verified BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
-CREATE TABLE provider_certifications (
-    cert_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    provider_id BIGINT NOT NULL,
-    cert_url VARCHAR(512) NOT NULL,
-    cert_type VARCHAR(100) NULL,
-    -- e.g., “plumbing license”, “insurance”
-    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (provider_id) REFERENCES service_providers(provider_id)
+    provider_id VARCHAR(40) NOT NULL,
+    cognito_sub VARCHAR(64) NOT NULL UNIQUE,
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(150) NOT NULL,
+    address_line VARCHAR(150),
+    city VARCHAR(100),
+    province VARCHAR(50),
+    postal_code VARCHAR(20),
+    bio TEXT,
+    rating FLOAT DEFAULT 0.0,
+    certification_url VARCHAR(512),
+    verification_status VARCHAR(20) NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at DATETIME NOT NULL,
+    PRIMARY KEY (provider_id),
+    UNIQUE KEY uq_service_provider_email (email)
 );
 CREATE TABLE service_offerings (
-    offering_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    provider_id BIGINT NOT NULL,
-    title VARCHAR(255) NOT NULL,
-    description TEXT NULL,
-    category VARCHAR(100) NOT NULL,
-    price DECIMAL(10, 2) NULL,
-    availability DATETIME NULL,
-    city VARCHAR(100) NULL,
-    state VARCHAR(100) NULL,
-    postal_code VARCHAR(20) NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    service_offering_id VARCHAR(40) NOT NULL,
+    provider_id VARCHAR(40) NOT NULL,
+    title VARCHAR(150) NOT NULL,
+    description TEXT NOT NULL,
+    category VARCHAR(50) NOT NULL,
+    price DECIMAL(10, 2) NOT NULL,
+    pricing_type VARCHAR(30) NOT NULL,
+    rating DECIMAL(3, 2) DEFAULT 0.00,
+    main_image_url VARCHAR(512),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at DATETIME NOT NULL,
+    PRIMARY KEY (service_offering_id),
     CONSTRAINT fk_service_offering_provider FOREIGN KEY (provider_id) REFERENCES service_providers(provider_id) ON DELETE CASCADE
 );
-ALTER TABLE provider_certifications
-ADD CONSTRAINT fk_provider_certifications_provider FOREIGN KEY (provider_id) REFERENCES service_providers(provider_id) ON DELETE CASCADE;
-SHOW CREATE TABLE provider_certifications;
-ALTER TABLE provider_certifications DROP FOREIGN KEY provider_certifications_ibfk_1;
+ALTER TABLE service_providers
+ADD COLUMN cognito_sub VARCHAR(64) NOT NULL UNIQUE
+AFTER provider_id;
