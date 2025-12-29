@@ -1,84 +1,94 @@
 import json
+import boto3
+import os
 from domain.service_provider import ServiceProvider
 from infrastructure.repository.service_provider_repo import ServiceProviderRepository
 
+cognito = boto3.client("cognito-idp")
 
 def lambda_handler(event, context):
-    """
-    Create Service Provider Lambda Handler
-    """
-
     try:
-        # 1️⃣ Get Cognito claims
-        claims = event["requestContext"]["authorizer"]["claims"]
+        # 🔐 JWT Authorizer (HTTP API)
+        authorizer = event.get("requestContext", {}).get("authorizer")
+
+        if not authorizer or "jwt" not in authorizer:
+            print("❌ Missing JWT authorizer")
+            return _response(401, {"error": "Unauthorized"})
+
+        claims = authorizer["jwt"].get("claims")
+
+        if not claims:
+            print("❌ JWT claims missing")
+            return _response(401, {"error": "Unauthorized"})
+
+        required_claims = ["cognito:username", "sub", "email"]
+        missing = [c for c in required_claims if c not in claims]
+
+        if missing:
+            print("❌ Missing required claims:", missing)
+            return _response(401, {"error": "Invalid token"})
+
+        # ✅ Safe identity values
+        username = claims["cognito:username"]
         cognito_sub = claims["sub"]
         email = claims["email"]
 
-        # 2️⃣ Parse request body
+        print("✅ Authenticated user:", username)
+
+        # 📦 Parse body
         body = json.loads(event.get("body", "{}"))
 
-        name = body.get("name")
-        address_line = body.get("address_line")
-        city = body.get("city")
-        province = body.get("province")
-        postal_code = body.get("postal_code")
+        required_fields = ["name", "address_line", "city", "province", "postal_code"]
+        if not all(body.get(f) for f in required_fields):
+            return _response(400, {"error": "Missing required fields"})
 
-        # 3️⃣ Basic validation
-        if not all([name, address_line, city, province, postal_code]):
-            return {
-                "statusCode": 400,
-                "headers": {"Content-Type": "application/json"},
-                "body": json.dumps(
-                    {"message": "Missing required fields"}
-                ),
-            }
-
-        # 4️⃣ Create domain object
+        # 🧠 Domain object
         provider = ServiceProvider(
             cognito_sub=cognito_sub,
-            name=name,
+            name=body["name"],
             email=email,
-            address_line=address_line,
-            city=city,
-            province=province,
-            postal_code=postal_code,
+            address_line=body["address_line"],
+            city=body["city"],
+            province=body["province"],
+            postal_code=body["postal_code"],
             bio=body.get("bio", ""),
             certification_url=body.get("certification_url", ""),
         )
 
-        # 5️⃣ Persist via repository
         repo = ServiceProviderRepository()
         repo.create(provider)
 
-        # 6️⃣ Success response
-        return {
-            "statusCode": 201,
-            "headers": {"Content-Type": "application/json"},
-            "body": json.dumps(
-                {
-                    "message": "Service Provider created successfully",
-                    "provider_id": provider.provider_id,
-                }
-            ),
-        }
+        # 👤 Promote user to ServiceProvider group
+        try:
+            cognito.admin_add_user_to_group(
+                UserPoolId=os.environ["USER_POOL_ID"],
+                Username=username,
+                GroupName="ServiceProvider",
+            )
+            print("✅ User added to ServiceProvider group")
 
-    except KeyError as e:
-        return {
-            "statusCode": 400,
-            "headers": {"Content-Type": "application/json"},
-            "body": json.dumps(
-                {"error": f"Missing required field: {str(e)}"}
-            ),
-        }
+        except Exception as e:
+            print("❌ Group assignment failed:", str(e))
+
+        return _response(201, {
+            "message": "Service Provider created successfully",
+            "provider_id": provider.provider_id,
+        })
 
     except Exception as e:
-        return {
-            "statusCode": 500,
-            "headers": {"Content-Type": "application/json"},
-            "body": json.dumps(
-                {
-                    "error": "Failed to create Service Provider",
-                    "details": str(e),
-                }
-            ),
-        }
+        print("❌ Lambda error:", str(e))
+        return _response(500, {
+            "error": "Failed to create Service Provider",
+            "details": str(e),
+        })
+
+
+def _response(status_code, body):
+    return {
+        "statusCode": status_code,
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+        },
+        "body": json.dumps(body),
+    }
