@@ -15,6 +15,20 @@ USE quickfix;
  */
 SELECT *
 FROM customers;
+-- FIX: Set cognito_sub as unique and remove email unique constraint
+-- 1. Remove unique constraint from email
+-- Note: MySQL usually names the index after the column if not specified.
+ALTER TABLE customers DROP INDEX email;
+-- 2. Add cognito_sub column if it doesn't exist
+-- If the column already exists, comment out the next line to avoid errors.
+ALTER TABLE customers
+ADD COLUMN cognito_sub VARCHAR(255) NULL;
+-- 3. Make cognito_sub unique
+ALTER TABLE customers
+ADD CONSTRAINT uq_customers_cognito_sub UNIQUE (cognito_sub);
+-- 4. Delete the extra email column (Verify name first: e.g., 'Email' or 'email_1')
+-- If you have a column named 'Email' (capital E) and 'email', here is how to drop one:
+-- ALTER TABLE customers DROP COLUMN Email;
 -- TABLE: service_providers
 -- 3) Remove duplicate emails from service_providers (Keep oldest/smallest ID)
 -- (Run this if you haven't already cleaned up duplicates)

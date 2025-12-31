@@ -4,12 +4,13 @@ CREATE TABLE customers (
     customer_id BIGINT AUTO_INCREMENT PRIMARY KEY,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
-    email VARCHAR(255) NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL,
     phone VARCHAR(20) NULL,
     address VARCHAR(255) NULL,
     city VARCHAR(100) NULL,
     state VARCHAR(100) NULL,
     postal_code VARCHAR(20) NULL,
+    cognito_sub VARCHAR(255) NULL UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE service_providers (
