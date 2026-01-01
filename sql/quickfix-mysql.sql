@@ -11,6 +11,7 @@ CREATE TABLE customers (
     state VARCHAR(100) NULL,
     postal_code VARCHAR(20) NULL,
     cognito_sub VARCHAR(255) NULL UNIQUE,
+    avatar_url VARCHAR(512) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE service_providers (
@@ -52,3 +53,6 @@ WHERE t1.provider_id > t2.provider_id
     AND t1.email = t2.email;
 ALTER TABLE service_providers
 ADD CONSTRAINT uq_service_providers_email UNIQUE (email);
+ALTER TABLE customers
+ADD COLUMN avatar_url VARCHAR(512) NULL COMMENT 'S3 URL for customer profile avatar';
+DESCRIBE customers;

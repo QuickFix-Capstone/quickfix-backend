@@ -95,7 +95,7 @@ def handler(event, context):
     # 3. Build UPDATE query dynamically based on provided fields
     updatable_fields = [
         "first_name", "last_name", "email", "phone",
-        "address", "city", "state", "postal_code"
+        "address", "city", "state", "postal_code", "avatar_url"
     ]
     
     updates = {}
@@ -134,7 +134,7 @@ def handler(event, context):
             cur.execute(
                 """
                 SELECT customer_id, first_name, last_name, email,
-                       phone, address, city, state, postal_code, cognito_sub
+                       phone, address, city, state, postal_code, cognito_sub, avatar_url
                 FROM customers
                 WHERE cognito_sub = %s
                 """,
@@ -153,6 +153,7 @@ def handler(event, context):
             "state": row["state"],
             "postal_code": row["postal_code"],
             "cognito_sub": row["cognito_sub"],
+            "avatar_url": row["avatar_url"],
         }
 
         return _response(200, {
