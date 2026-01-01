@@ -51,3 +51,11 @@ ALTER TABLE service_providers
 ADD COLUMN cognito_sub VARCHAR(255) NULL;
 ALTER TABLE service_providers
 ADD CONSTRAINT uq_service_providers_cognito_sub UNIQUE (cognito_sub);
+DESCRIBE customers;
+ALTER TABLE customers DROP INDEX email;
+SHOW INDEX
+FROM customers;
+ALTER TABLE customers DROP INDEX uq_customers_email;
+SHOW INDEX
+FROM customers;
+TRUNCATE TABLE customers;
