@@ -117,16 +117,18 @@ def handler(event, context):
     safe_file_name = file_name.replace("/", "-").replace("\\", "-")
     s3_key = f"customers-avatar/{cognito_sub}/{timestamp}-{safe_file_name}"
 
-    # 6. Generate presigned POST URL
+    # 6. Generate presigned POST URL with public-read ACL
     try:
         presigned_post = s3_client.generate_presigned_post(
             Bucket=S3_BUCKET,
             Key=s3_key,
             Fields={
-                "Content-Type": content_type
+                "Content-Type": content_type,
+                "acl": "public-read"  # Make uploaded images publicly readable
             },
             Conditions=[
                 {"Content-Type": content_type},
+                {"acl": "public-read"},  # Allow public-read ACL
                 ["content-length-range", 1, MAX_FILE_SIZE]  # 1 byte to 5MB
             ],
             ExpiresIn=300  # URL expires in 5 minutes
