@@ -98,3 +98,54 @@ CREATE TABLE IF NOT EXISTS bookings (
 );
 -- Verify the table
 DESCRIBE bookings;
+-- ============================================
+-- Migration: Create jobs and job_applications tables
+-- Date: 2026-01-02
+-- ============================================
+-- Jobs table
+CREATE TABLE IF NOT EXISTS jobs (
+    job_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    customer_id BIGINT NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+    category VARCHAR(100) NULL,
+    location_address VARCHAR(500) NOT NULL,
+    location_city VARCHAR(100) NULL,
+    location_state VARCHAR(50) NULL,
+    location_zip VARCHAR(20) NULL,
+    preferred_date DATE NULL,
+    preferred_time TIME NULL,
+    budget_min DECIMAL(10, 2) NULL,
+    budget_max DECIMAL(10, 2) NULL,
+    status ENUM(
+        'open',
+        'assigned',
+        'in_progress',
+        'completed',
+        'cancelled'
+    ) NOT NULL DEFAULT 'open',
+    assigned_provider_id VARCHAR(40) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_job_customer FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE CASCADE,
+    INDEX idx_customer_id (customer_id),
+    INDEX idx_status (status),
+    INDEX idx_category (category)
+);
+-- Job applications table
+CREATE TABLE IF NOT EXISTS job_applications (
+    application_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    job_id BIGINT NOT NULL,
+    provider_id VARCHAR(40) NOT NULL,
+    proposed_price DECIMAL(10, 2) NULL,
+    message TEXT NULL,
+    status ENUM('pending', 'accepted', 'rejected') NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_application_job FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE,
+    UNIQUE KEY unique_application (job_id, provider_id),
+    INDEX idx_job_id (job_id),
+    INDEX idx_provider_id (provider_id)
+);
+-- Verify tables
+DESCRIBE jobs;
+DESCRIBE job_applications;
