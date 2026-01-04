@@ -18,7 +18,10 @@ def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "statusCode": status_code,
         "headers": {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Content-Type,Authorization",
+            "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS"
         },
         "body": json.dumps(body),
     }
@@ -26,27 +29,23 @@ def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
 
 def handler(event, context):
     """
-    Cancel a job posting.
+    Get detailed information about a specific job.
     
     Authentication:
     - Requires JWT authorizer (Cognito)
     - cognito_sub extracted from JWT claims
     
     Path Parameter:
-    - job_id: ID of the job to cancel
+    - job_id: ID of the job to retrieve
     
     Authorization:
-    - Customer can only cancel their own jobs
-    
-    Logic:
-    - Set job status to "cancelled"
-    - Reject all pending applications for this job
+    - Customer can only view their own jobs
     
     Returns:
-    - 200: Job cancelled successfully
+    - 200: Job details with provider info if assigned
     - 401: Unauthorized
     - 403: Forbidden (not customer's job)
-    - 404: Job not found
+    - 404: Job not found or customer not found
     - 500: Server error
     """
     
@@ -85,9 +84,24 @@ def handler(event, context):
             
             customer_id = customer_row["customer_id"]
 
-            # 5. Check if job exists and belongs to customer
+            # 5. Get job details with provider info and application count
             cur.execute(
-                "SELECT customer_id, status, title FROM jobs WHERE job_id = %s",
+                """
+                SELECT 
+                    j.job_id, j.customer_id, j.title, j.description, j.category,
+                    j.location_address, j.location_city, j.location_state, j.location_zip,
+                    j.preferred_date, j.preferred_time, j.budget_min, j.budget_max,
+                    j.status, j.assigned_provider_id, j.created_at, j.updated_at,
+                    sp.name as provider_name,
+                    sp.rating as provider_rating,
+                    sp.phone_number as provider_phone,
+                    COUNT(ja.application_id) as application_count
+                FROM jobs j
+                LEFT JOIN service_providers sp ON j.assigned_provider_id COLLATE utf8mb4_0900_ai_ci = sp.provider_id
+                LEFT JOIN job_applications ja ON j.job_id = ja.job_id
+                WHERE j.job_id = %s
+                GROUP BY j.job_id
+                """,
                 (job_id,)
             )
             job_row = cur.fetchone()
@@ -95,40 +109,51 @@ def handler(event, context):
             if not job_row:
                 return _response(404, {"message": "Job not found"})
             
-            # 6. Authorization check
+            # 6. Authorization check - customer can only view their own jobs
             if job_row["customer_id"] != customer_id:
-                return _response(403, {"message": "Forbidden: You can only cancel your own jobs"})
+                return _response(403, {"message": "Forbidden: You can only view your own jobs"})
 
-            # 7. Update job status to cancelled
-            cur.execute(
-                "UPDATE jobs SET status = 'cancelled' WHERE job_id = %s",
-                (job_id,)
-            )
+        # 7. Format response
+        job = {
+            "job_id": job_row["job_id"],
+            "title": job_row["title"],
+            "description": job_row["description"],
+            "category": job_row["category"],
+            "location": {
+                "address": job_row["location_address"],
+                "city": job_row["location_city"],
+                "state": job_row["location_state"],
+                "zip": job_row["location_zip"]
+            },
+            "preferred_date": str(job_row["preferred_date"]) if job_row["preferred_date"] else None,
+            "preferred_time": str(job_row["preferred_time"]) if job_row["preferred_time"] else None,
+            "budget": {
+                "min": float(job_row["budget_min"]) if job_row["budget_min"] else None,
+                "max": float(job_row["budget_max"]) if job_row["budget_max"] else None
+            },
+            "status": job_row["status"],
+            "application_count": job_row["application_count"],
+            "created_at": job_row["created_at"].isoformat() if job_row["created_at"] else None,
+            "updated_at": job_row["updated_at"].isoformat() if job_row["updated_at"] else None
+        }
 
-            # 8. Reject all pending applications for this job
-            cur.execute(
-                """
-                UPDATE job_applications 
-                SET status = 'rejected' 
-                WHERE job_id = %s AND status = 'pending'
-                """,
-                (job_id,)
-            )
-            
-            rejected_count = cur.rowcount
-            
-            conn.commit()
+        # 8. Add provider details if job is assigned
+        if job_row["assigned_provider_id"]:
+            job["assigned_provider"] = {
+                "provider_id": job_row["assigned_provider_id"],
+                "name": job_row["provider_name"],
+                "rating": float(job_row["provider_rating"]) if job_row["provider_rating"] else None,
+                "phone": job_row["provider_phone"]
+            }
+        else:
+            job["assigned_provider"] = None
 
         return _response(200, {
-            "message": "Job cancelled successfully",
-            "job_id": int(job_id),
-            "title": job_row["title"],
-            "previous_status": job_row["status"],
-            "applications_rejected": rejected_count
+            "job": job
         })
 
     except Exception as e:
-        print(f"Error cancelling job: {e}")
+        print(f"Error fetching job details: {e}")
         return _response(500, {"message": "Internal server error"})
 
     finally:
@@ -140,6 +165,7 @@ def handler(event, context):
 
 # Local testing
 if __name__ == "__main__":
+    # Test event with mock JWT claims
     test_event = {
         "requestContext": {
             "authorizer": {
@@ -151,11 +177,11 @@ if __name__ == "__main__":
             }
         },
         "pathParameters": {
-            "job_id": "2"
+            "job_id": "1"
         }
     }
 
-    print("🔍 Running local test for cancel_job.handler()...")
+    print("🔍 Running local test for get_job_details.handler()...")
     result = handler(test_event, None)
     print("Response:")
     print(json.dumps(result, indent=2))

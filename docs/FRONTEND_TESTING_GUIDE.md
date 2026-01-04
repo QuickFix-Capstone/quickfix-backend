@@ -219,6 +219,56 @@ fetch(`https://kfvf20j7j9.execute-api.us-east-2.amazonaws.com/prod/job/${jobId}/
 
 ---
 
+## Test 5: Get Job Details
+
+### API Call
+```javascript
+const jobId = 4;
+const token = "your-jwt-token-here";
+
+fetch(`https://kfvf20j7j9.execute-api.us-east-2.amazonaws.com/prod/job/${jobId}`, {
+  method: 'GET',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  }
+})
+.then(res => res.json())
+.then(data => console.log('Job Details:', data))
+.catch(err => console.error('Error:', err));
+```
+
+### Expected Response
+```json
+{
+  "job": {
+    "job_id": 4,
+    "title": "Fixed Kithchen power",
+    "description": "This is job for us",
+    "category": "electrician",
+    "location": {
+      "address": "123 yonge st",
+      "city": "Mississauga",
+      "state": "Ontario",
+      "zip": "L5M 5M8"
+    },
+    "preferred_date": "2026-01-15",
+    "preferred_time": "09:10:00",
+    "budget": {
+      "min": 100.0,
+      "max": 150.0
+    },
+    "status": "open",
+    "application_count": 3,
+    "created_at": "2026-01-03T21:05:42",
+    "updated_at": "2026-01-04T05:09:29",
+    "assigned_provider": null
+  }
+}
+```
+
+---
+
 ## Complete React Component Example
 
 ```jsx

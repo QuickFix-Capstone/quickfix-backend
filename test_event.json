@@ -1,0 +1,14 @@
+{
+    "requestContext": {
+        "authorizer": {
+            "jwt": {
+                "claims": {
+                    "sub": "415b3510-a0a1-708e-6a02-dc457aec9ecc"
+                }
+            }
+        }
+    },
+    "pathParameters": {
+        "job_id": "4"
+    }
+}
