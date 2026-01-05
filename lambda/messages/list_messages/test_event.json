@@ -1,0 +1,17 @@
+{
+    "requestContext": {
+        "authorizer": {
+            "jwt": {
+                "claims": {
+                    "sub": "415b3510-a0a1-708e-6a02-dc457aec9ecc"
+                }
+            }
+        }
+    },
+    "pathParameters": {
+        "conversationId": "a103818f-ed02-4f47-9dd3-def9e2a5bfcd"
+    },
+    "queryStringParameters": {
+        "limit": "50"
+    }
+}
