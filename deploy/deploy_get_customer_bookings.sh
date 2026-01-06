@@ -27,7 +27,7 @@ cd - > /dev/null
 echo "👉 Updating Lambda code: ${FUNC_NAME} ..."
 aws lambda update-function-code \
   --function-name "$FUNC_NAME" \
-  --zip-file "fileb://.build/${ZIP_FILE}" \
+  --zip-file "fileb://deploy/.build/${ZIP_FILE}" \
   --region "$AWS_REGION"
 
 echo "✅ Deployed ${FUNC_NAME}"

@@ -98,8 +98,7 @@ def handler(event, context):
                     b.service_address, b.service_city, b.service_state, b.service_postal_code,
                     b.estimated_price, b.final_price, b.notes,
                     b.created_at, b.updated_at, b.completed_at,
-                    sp.first_name AS provider_first_name,
-                    sp.last_name AS provider_last_name,
+                    sp.name AS provider_name,
                     sp.business_name AS provider_business_name,
                     sp.rating AS provider_rating
                 FROM bookings b
@@ -138,7 +137,7 @@ def handler(event, context):
                 "booking_id": row["booking_id"],
                 "provider": {
                     "provider_id": row["provider_id"],
-                    "name": f"{row['provider_first_name']} {row['provider_last_name']}",
+                    "name": row["provider_name"],
                     "business_name": row["provider_business_name"],
                     "rating": float(row["provider_rating"]) if row["provider_rating"] else 0.0
                 },
@@ -173,7 +172,7 @@ def handler(event, context):
 
     except Exception as e:
         print(f"Error fetching bookings: {e}")
-        return _response(500, {"message": "Internal server error"})
+        return _response(500, {"message": f"Internal server error: {str(e)}"})
 
     finally:
         try:
