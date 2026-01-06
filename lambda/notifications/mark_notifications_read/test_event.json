@@ -1,0 +1,12 @@
+{
+    "requestContext": {
+        "authorizer": {
+            "jwt": {
+                "claims": {
+                    "sub": "510ba500-c021-70c2-f03e-590fd18ca5ad"
+                }
+            }
+        }
+    },
+    "body": "{\"items\":[{\"notif_sort\":\"NOTIF#2026-01-06T00:39:49.241538Z#MSG#1767659987428\"}]}"
+}
