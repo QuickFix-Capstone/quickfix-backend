@@ -68,18 +68,11 @@ def handler(event, context):
             print(f"New message in conversation {conversation_id} from {sender_name}")
             
             # Get conversation details to find recipient
-            # We need to query both conversation entries to find the OTHER user
-            conv_response = conversations_table.query(
-                IndexName=None,  # Query on primary key
-                KeyConditionExpression=boto3.dynamodb.conditions.Key('conversationId').eq(conversation_id),
-                FilterExpression=boto3.dynamodb.conditions.Attr('userId').ne(sender_id)
-            )
-            
-            # Alternative: Query by conversationId as SK (but we need userId as PK)
-            # Let's scan for this conversation and filter
+            # Scan for this conversation and filter out the sender
             conv_response = conversations_table.scan(
                 FilterExpression=boto3.dynamodb.conditions.Attr('conversationId').eq(conversation_id) & 
-                                boto3.dynamodb.conditions.Attr('userId').ne(sender_id)
+                                boto3.dynamodb.conditions.Attr('userId').ne(sender_id),
+                Limit=2  # We only need to find the other user
             )
             
             if not conv_response.get('Items'):
