@@ -1,254 +1,106 @@
 #!/usr/bin/env bash
 # Setup API Gateway endpoint for get_review_by_id Lambda with JWT authorizer
+# Uses HTTP API (API Gateway v2) - same as existing QuickFixAPI
 
 set -e
 
 FUNC_NAME="get_review_by_id"
 AWS_REGION="us-east-2"
 AWS_ACCOUNT_ID="008971679867"
-API_NAME="QuickFixAPI"
+API_ID="kfvf20j7j9"  # Existing HTTP API Gateway ID
+AUTHORIZER_ID="z8zn33"  # Existing JWT authorizer for customers/general use
 
-# Cognito User Pool details
-COGNITO_USER_POOL_ID="us-east-2_45z5OMePi"
-COGNITO_APP_CLIENT_ID="p2u5qdegml3hp60n6ohu52n2b"
+echo "🔍 Using existing API Gateway: ${API_ID}"
 
-echo "🔍 Finding or creating API Gateway..."
-
-# Check if API Gateway exists
-API_ID=$(aws apigateway get-rest-apis \
-  --region "${AWS_REGION}" \
-  --query "items[?name=='${API_NAME}'].id" \
-  --output text)
-
-if [ -z "$API_ID" ]; then
-  echo "📝 Creating new API Gateway: ${API_NAME}..."
-  API_ID=$(aws apigateway create-rest-api \
-    --name "${API_NAME}" \
-    --description "QuickFix Service Platform API" \
-    --region "${AWS_REGION}" \
-    --endpoint-configuration types=REGIONAL \
-    --query 'id' \
-    --output text)
-  echo "✅ Created API Gateway with ID: ${API_ID}"
-else
-  echo "✅ Found existing API Gateway with ID: ${API_ID}"
-fi
-
-# Get root resource ID
-ROOT_RESOURCE_ID=$(aws apigateway get-resources \
-  --rest-api-id "${API_ID}" \
-  --region "${AWS_REGION}" \
-  --query 'items[?path==`/`].id' \
-  --output text)
-
-echo "📍 Root resource ID: ${ROOT_RESOURCE_ID}"
-
-# Check if /review resource exists, if not create it
-REVIEW_RESOURCE_ID=$(aws apigateway get-resources \
-  --rest-api-id "${API_ID}" \
-  --region "${AWS_REGION}" \
-  --query "items[?path=='/review'].id" \
-  --output text)
-
-if [ -z "$REVIEW_RESOURCE_ID" ]; then
-  echo "📝 Creating /review resource..."
-  REVIEW_RESOURCE_ID=$(aws apigateway create-resource \
-    --rest-api-id "${API_ID}" \
-    --parent-id "${ROOT_RESOURCE_ID}" \
-    --path-part "review" \
-    --region "${AWS_REGION}" \
-    --query 'id' \
-    --output text)
-  echo "✅ Created /review resource with ID: ${REVIEW_RESOURCE_ID}"
-else
-  echo "✅ Found existing /review resource with ID: ${REVIEW_RESOURCE_ID}"
-fi
-
-# Check if /review/{review_id} resource exists, if not create it
-REVIEW_ID_RESOURCE_ID=$(aws apigateway get-resources \
-  --rest-api-id "${API_ID}" \
-  --region "${AWS_REGION}" \
-  --query "items[?path=='/review/{review_id}'].id" \
-  --output text)
-
-if [ -z "$REVIEW_ID_RESOURCE_ID" ]; then
-  echo "📝 Creating /review/{review_id} resource..."
-  REVIEW_ID_RESOURCE_ID=$(aws apigateway create-resource \
-    --rest-api-id "${API_ID}" \
-    --parent-id "${REVIEW_RESOURCE_ID}" \
-    --path-part "{review_id}" \
-    --region "${AWS_REGION}" \
-    --query 'id' \
-    --output text)
-  echo "✅ Created /review/{review_id} resource with ID: ${REVIEW_ID_RESOURCE_ID}"
-else
-  echo "✅ Found existing /review/{review_id} resource with ID: ${REVIEW_ID_RESOURCE_ID}"
-fi
-
-# Create or find JWT authorizer
-echo "🔐 Setting up JWT Authorizer..."
-
-AUTHORIZER_ID=$(aws apigateway get-authorizers \
-  --rest-api-id "${API_ID}" \
-  --region "${AWS_REGION}" \
-  --query "items[?name=='CognitoAuthorizer'].id" \
-  --output text)
-
-if [ -z "$AUTHORIZER_ID" ]; then
-  echo "📝 Creating Cognito JWT Authorizer..."
-
-  # Note: Update the COGNITO_USER_POOL_ID and COGNITO_APP_CLIENT_ID above
-  if [ "$COGNITO_USER_POOL_ID" = "YOUR_USER_POOL_ID" ]; then
-    echo "⚠️  WARNING: Please update COGNITO_USER_POOL_ID in this script"
-    echo "⚠️  Skipping authorizer creation for now"
-    AUTHORIZER_ID=""
-  else
-    AUTHORIZER_ID=$(aws apigateway create-authorizer \
-      --rest-api-id "${API_ID}" \
-      --name "CognitoAuthorizer" \
-      --type COGNITO_USER_POOLS \
-      --provider-arns "arn:aws:cognito-idp:${AWS_REGION}:${AWS_ACCOUNT_ID}:userpool/${COGNITO_USER_POOL_ID}" \
-      --identity-source "method.request.header.Authorization" \
-      --region "${AWS_REGION}" \
-      --query 'id' \
-      --output text)
-    echo "✅ Created Authorizer with ID: ${AUTHORIZER_ID}"
-  fi
-else
-  echo "✅ Found existing Authorizer with ID: ${AUTHORIZER_ID}"
-fi
-
-# Create GET method on /review/{review_id}
-echo "📝 Creating GET method on /review/{review_id}..."
-
-# Delete existing method if it exists
-aws apigateway delete-method \
-  --rest-api-id "${API_ID}" \
-  --resource-id "${REVIEW_ID_RESOURCE_ID}" \
-  --http-method GET \
-  --region "${AWS_REGION}" 2>/dev/null || true
-
-# Create GET method with JWT authorization
-aws apigateway put-method \
-  --rest-api-id "${API_ID}" \
-  --resource-id "${REVIEW_ID_RESOURCE_ID}" \
-  --http-method GET \
-  --authorization-type COGNITO_USER_POOLS \
-  --authorizer-id "${AUTHORIZER_ID}" \
-  --request-parameters "method.request.header.Authorization=true,method.request.path.review_id=true" \
-  --region "${AWS_REGION}"
-
-echo "✅ Created GET method"
-
-# Set up Lambda integration
-echo "🔗 Setting up Lambda integration..."
+# Step 1: Create Lambda integration
+echo "🔗 Creating Lambda integration..."
 
 LAMBDA_ARN="arn:aws:lambda:${AWS_REGION}:${AWS_ACCOUNT_ID}:function:${FUNC_NAME}"
 
-aws apigateway put-integration \
-  --rest-api-id "${API_ID}" \
-  --resource-id "${REVIEW_ID_RESOURCE_ID}" \
-  --http-method GET \
-  --type AWS_PROXY \
-  --integration-http-method POST \
-  --uri "arn:aws:apigateway:${AWS_REGION}:lambda:path/2015-03-31/functions/${LAMBDA_ARN}/invocations" \
-  --region "${AWS_REGION}"
+INTEGRATION_ID=$(aws apigatewayv2 create-integration \
+  --api-id "${API_ID}" \
+  --integration-type AWS_PROXY \
+  --integration-uri "${LAMBDA_ARN}" \
+  --payload-format-version 2.0 \
+  --region "${AWS_REGION}" \
+  --query 'IntegrationId' \
+  --output text)
 
-echo "✅ Lambda integration configured"
+echo "✅ Created integration: ${INTEGRATION_ID}"
 
-# Add Lambda permission for API Gateway to invoke the function
-echo "🔑 Adding Lambda invoke permission for API Gateway..."
+# Step 2: Create route
+echo "📝 Creating route: GET /reviews/{review_id}..."
+
+ROUTE_ID=$(aws apigatewayv2 create-route \
+  --api-id "${API_ID}" \
+  --route-key "GET /reviews/{review_id}" \
+  --authorization-type JWT \
+  --authorizer-id "${AUTHORIZER_ID}" \
+  --target "integrations/${INTEGRATION_ID}" \
+  --region "${AWS_REGION}" \
+  --query 'RouteId' \
+  --output text 2>/dev/null || echo "")
+
+if [ -z "$ROUTE_ID" ]; then
+  echo "⚠️  Route may already exist, trying to update..."
+  
+  # Get existing route ID
+  ROUTE_ID=$(aws apigatewayv2 get-routes \
+    --api-id "${API_ID}" \
+    --region "${AWS_REGION}" \
+    --query "Items[?RouteKey=='GET /reviews/{review_id}'].RouteId" \
+    --output text)
+  
+  if [ -n "$ROUTE_ID" ]; then
+    # Update existing route
+    aws apigatewayv2 update-route \
+      --api-id "${API_ID}" \
+      --route-id "${ROUTE_ID}" \
+      --target "integrations/${INTEGRATION_ID}" \
+      --region "${AWS_REGION}"
+    echo "✅ Updated existing route: ${ROUTE_ID}"
+  fi
+else
+  echo "✅ Created route: ${ROUTE_ID}"
+fi
+
+# Step 3: Add Lambda permission
+echo "🔑 Adding Lambda invoke permission..."
 
 aws lambda add-permission \
   --function-name "${FUNC_NAME}" \
-  --statement-id "apigateway-invoke-${FUNC_NAME}-$(date +%s)" \
+  --statement-id "apigatewayv2-invoke-$(date +%s)" \
   --action lambda:InvokeFunction \
   --principal apigateway.amazonaws.com \
-  --source-arn "arn:aws:execute-api:${AWS_REGION}:${AWS_ACCOUNT_ID}:${API_ID}/*/*" \
+  --source-arn "arn:aws:execute-api:${AWS_REGION}:${AWS_ACCOUNT_ID}:${API_ID}/*/*/reviews/*" \
   --region "${AWS_REGION}" 2>/dev/null || echo "⚠️  Permission may already exist"
 
 echo "✅ Lambda permission added"
 
-# Enable CORS for OPTIONS method
-echo "🌐 Setting up CORS..."
+# Step 4: Deploy to prod stage
+echo "🚀 Deploying to prod stage..."
 
-# Delete existing OPTIONS method if it exists
-aws apigateway delete-method \
-  --rest-api-id "${API_ID}" \
-  --resource-id "${REVIEW_ID_RESOURCE_ID}" \
-  --http-method OPTIONS \
-  --region "${AWS_REGION}" 2>/dev/null || true
-
-# Create OPTIONS method
-aws apigateway put-method \
-  --rest-api-id "${API_ID}" \
-  --resource-id "${REVIEW_ID_RESOURCE_ID}" \
-  --http-method OPTIONS \
-  --authorization-type NONE \
-  --region "${AWS_REGION}"
-
-# Set up method response for OPTIONS (must be created BEFORE integration response)
-aws apigateway put-method-response \
-  --rest-api-id "${API_ID}" \
-  --resource-id "${REVIEW_ID_RESOURCE_ID}" \
-  --http-method OPTIONS \
-  --status-code 200 \
-  --response-parameters '{
-    "method.response.header.Access-Control-Allow-Headers": true,
-    "method.response.header.Access-Control-Allow-Methods": true,
-    "method.response.header.Access-Control-Allow-Origin": true
-  }' \
-  --region "${AWS_REGION}"
-
-# Set up mock integration for OPTIONS
-aws apigateway put-integration \
-  --rest-api-id "${API_ID}" \
-  --resource-id "${REVIEW_ID_RESOURCE_ID}" \
-  --http-method OPTIONS \
-  --type MOCK \
-  --request-templates '{"application/json": "{\"statusCode\": 200}"}' \
-  --region "${AWS_REGION}"
-
-# Set up integration response for OPTIONS (must be created AFTER method response)
-aws apigateway put-integration-response \
-  --rest-api-id "${API_ID}" \
-  --resource-id "${REVIEW_ID_RESOURCE_ID}" \
-  --http-method OPTIONS \
-  --status-code 200 \
-  --response-parameters '{
-    "method.response.header.Access-Control-Allow-Headers": "'\''Content-Type,Authorization'\''",
-    "method.response.header.Access-Control-Allow-Methods": "'\''GET,OPTIONS'\''",
-    "method.response.header.Access-Control-Allow-Origin": "'\''*'\''"
-  }' \
-  --region "${AWS_REGION}"
-
-echo "✅ CORS configured"
-
-# Deploy API
-echo "🚀 Deploying API to 'prod' stage..."
-
-aws apigateway create-deployment \
-  --rest-api-id "${API_ID}" \
+aws apigatewayv2 create-deployment \
+  --api-id "${API_ID}" \
   --stage-name prod \
-  --stage-description "Production stage" \
-  --description "Deployment for get_review_by_id endpoint" \
-  --region "${AWS_REGION}"
+  --region "${AWS_REGION}" > /dev/null
 
-echo ""
-echo "✅ API Gateway setup complete!"
+echo "✅ Deployment complete"
+
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "✅ API Gateway setup complete!"
+echo ""
 echo "📍 API Endpoint:"
-echo "   GET https://${API_ID}.execute-api.${AWS_REGION}.amazonaws.com/prod/review/{review_id}"
+echo "   GET https://${API_ID}.execute-api.${AWS_REGION}.amazonaws.com/prod/reviews/{review_id}"
 echo ""
 echo "🔐 Authentication:"
 echo "   Authorization: Bearer <JWT_TOKEN>"
 echo ""
 echo "📝 Example cURL request:"
 echo "   curl -X GET \\"
-echo "     https://${API_ID}.execute-api.${AWS_REGION}.amazonaws.com/prod/review/1 \\"
-echo "     -H 'Content-Type: application/json' \\"
+echo "     'https://${API_ID}.execute-api.${AWS_REGION}.amazonaws.com/prod/reviews/4' \\"
 echo "     -H 'Authorization: Bearer YOUR_JWT_TOKEN'"
 echo ""
-echo "💡 This endpoint can be used by both customers and service providers"
+echo "💡 This endpoint uses the same API Gateway and authorizer as POST /reviews"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
