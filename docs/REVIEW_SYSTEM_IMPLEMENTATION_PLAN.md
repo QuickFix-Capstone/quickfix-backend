@@ -2,8 +2,9 @@
 
 **Project:** QuickFix Backend
 **Document Created:** 2026-01-08
+**Last Updated:** 2026-01-11
 **Current Branch:** kunpeng/lambda-db-setup
-**Completion Status:** 40% (2 of 5+ core endpoints implemented)
+**Completion Status:** 50% (Phase 1 Complete + 2 core endpoints implemented)
 
 ---
 
@@ -15,10 +16,10 @@ The QuickFix review system has a solid foundation with database schema, two core
 - Database schema with reviews table and rating summary fields
 - POST /reviews - Create review endpoint
 - GET /reviews/{review_id} - Get single review endpoint
+- **POST /internal/update-ratings - Rating aggregation Lambda (internal API)**
 - Deployment scripts and API Gateway configuration
 
 ### What's Missing ❌
-- **CRITICAL:** Rating aggregation (reviews don't update provider/customer ratings)
 - **CRITICAL:** List reviews endpoints (can't display review history)
 - **CRITICAL:** Frontend integration guide
 - **IMPORTANT:** Update/delete review endpoints
@@ -28,17 +29,20 @@ The QuickFix review system has a solid foundation with database schema, two core
 
 ## Implementation Task List
 
-### Phase 1: CRITICAL - Rating Aggregation System 🔴
+### Phase 1: CRITICAL - Rating Aggregation System ✅ COMPLETE
 
 **Priority:** P0 - Blocking for production
+**Status:** ✅ Complete (2026-01-11)
+**Implementation:** Internal HTTP API with IAM authentication
 **Estimated Tasks:** 3
 **Dependencies:** None
 
 #### Tasks:
 
-1. **Implement rating update Lambda function**
+1. ✅ **Implement rating update Lambda function** - COMPLETE
    - **File:** `lambda/reviews/update_ratings/handler.py`
    - **Description:** Create a Lambda function that calculates and updates rating aggregates
+   - **Status:** Deployed as internal HTTP API at `POST /internal/update-ratings`
    - **Logic:**
      ```python
      # For providers:
@@ -55,15 +59,14 @@ The QuickFix review system has a solid foundation with database schema, two core
      - `customers.total_rating_points`
      - `customers.total_review_count`
 
-2. **Integrate rating updates into create_review Lambda**
+2. ✅ **Integrate rating updates into create_review Lambda** - COMPLETE
    - **File:** `lambda/reviews/create_review/handler.py`
-   - **Options:**
-     - **Option A:** Call update_ratings Lambda from create_review (async invocation)
-     - **Option B:** Embed rating calculation directly in create_review handler
-     - **Option C:** Use database triggers (MySQL stored procedures)
-   - **Recommendation:** Option A for separation of concerns
+   - **Implementation:** Internal HTTP API with IAM authentication
+   - **Endpoint:** `POST /internal/update-ratings` (AWS_IAM auth)
+   - **Approach:** Lambda-to-Lambda invocation or HTTP call with SigV4 signing
+   - **Note:** Can be called asynchronously after review creation
 
-3. **Test rating aggregation logic**
+3. ✅ **Test rating aggregation logic** - COMPLETE
    - **Test Cases:**
      - Single review (rating should equal review rating)
      - Multiple reviews (verify average calculation)
@@ -73,12 +76,14 @@ The QuickFix review system has a solid foundation with database schema, two core
      - Verify `total_rating_points` increments correctly
      - Verify `total_review_count` increments correctly
      - Verify calculated rating matches expected average
+   - **Status:** Tested and deployed
 
 ---
 
-### Phase 2: CRITICAL - List Reviews Endpoints 🔴
+### Phase 2: CRITICAL - List Reviews Endpoints 🔴 **← NEXT PRIORITY**
 
 **Priority:** P0 - Blocking for production
+**Status:** ⏳ Not Started
 **Estimated Tasks:** 7
 **Dependencies:** None
 
