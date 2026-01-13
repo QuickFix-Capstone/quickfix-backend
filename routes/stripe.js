@@ -7,7 +7,7 @@ const router = express.Router();
 // Initialize Stripe with the secret key from env
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// ✅ 1) Provider onboarding link (Connect Express)
+//  1) Provider onboarding link (Connect Express)
 router.post("/connect/onboard", (req, res) => {
     const { providerId, email } = req.body;
 
@@ -48,7 +48,7 @@ router.post("/connect/onboard", (req, res) => {
     );
 });
 
-// ✅ 2) Create PaymentIntent with split payout (Connect)
+//  2) Create PaymentIntent with split payout (Connect)
 router.post("/payment/create-intent", (req, res) => {
     let { customerId, providerId, amountCents, currency = "cad" } = req.body;
 

@@ -3,6 +3,8 @@ import express from "express";
 import cors from "cors";
 import stripeRoutes from "./routes/stripe.js";
 
+import ordersRoutes from "./routes/orders.js";
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -15,7 +17,7 @@ app.use(cors({
 const jsonMiddleware = express.json();
 
 app.use((req, res, next) => {
-    if (req.path === '/stripe/webhook') {
+    if (req.originalUrl.includes('/stripe/webhook')) {
         // Webhook needs raw body, handled in the route or skipped here
         next();
     } else {
@@ -24,6 +26,7 @@ app.use((req, res, next) => {
 });
 
 app.use("/", stripeRoutes);
+app.use("/", ordersRoutes);
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
