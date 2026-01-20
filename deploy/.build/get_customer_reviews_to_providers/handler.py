@@ -50,10 +50,10 @@ def _get_sort_clause(sort_option: str) -> str:
 
 def handler(event, context):
     """
-    Lambda entrypoint for getting all reviews for a customer.
+    Lambda entrypoint for getting all reviews CREATED BY the logged-in customer.
     
-    Path Parameters:
-        customer_id: The customer's ID (from URL path)
+    This returns reviews where the customer is the REVIEWER (not reviewee).
+    Use case: "Show me all the reviews I've written about providers"
     
     Query Parameters:
         sort: Sort order - 'newest' (default), 'oldest', 'highest_rating', 'lowest_rating'
@@ -61,31 +61,29 @@ def handler(event, context):
         offset: Pagination offset (default: 0)
     
     Example URLs:
-        GET /reviews/customer/1
-        GET /reviews/customer/2?sort=highest_rating&limit=20&offset=0
+        GET /customer/reviews
+        GET /customer/reviews?sort=highest_rating&limit=20&offset=0
     
     Returns:
         200: Reviews retrieved successfully
         400: Invalid parameters
-        404: Customer not found
+        401: Unauthorized (missing JWT)
         500: Internal server error
     """
-    # 1) Extract customer_id from path parameters
-    path_params = event.get("pathParameters") or {}
-    customer_id = path_params.get("customer_id")
-    
-    # For local testing, allow customer_id in event root
-    if not customer_id:
-        customer_id = event.get("customer_id")
+    # 1) Extract customer_id from JWT token
+    customer_id = event.get("customer_id")  # For local testing
     
     if not customer_id:
-        return _response(400, {"message": "Missing required path parameter: customer_id"})
-    
-    # Validate customer_id is an integer
-    try:
-        customer_id = int(customer_id)
-    except (ValueError, TypeError):
-        return _response(400, {"message": "customer_id must be a valid integer"})
+        # Try to get from requestContext (API Gateway JWT authorizer)
+        request_context = event.get("requestContext", {})
+        authorizer = request_context.get("authorizer", {})
+        jwt_claims = authorizer.get("jwt", {}).get("claims", {})
+        
+        # Get email from JWT claims
+        email = jwt_claims.get("email")
+        
+        if not email:
+            return _response(401, {"message": "Unauthorized - missing email in JWT token"})
     
     # 2) Parse query parameters
     try:
@@ -113,54 +111,55 @@ def handler(event, context):
     
     try:
         with conn.cursor() as cur:
-            # 5) Get total count of reviews for this customer
+            # 5) If customer_id not set (JWT flow), look up by email
+            if not customer_id and 'email' in locals():
+                cur.execute(
+                    "SELECT customer_id, first_name, last_name FROM customers WHERE email = %s",
+                    (email,)
+                )
+                customer_result = cur.fetchone()
+                if not customer_result:
+                    return _response(403, {"message": "Customer not found for this email"})
+                customer_id = customer_result['customer_id']
+                customer_name = f"{customer_result['first_name']} {customer_result['last_name']}"
+            else:
+                # Get customer name for local testing
+                cur.execute(
+                    "SELECT first_name, last_name FROM customers WHERE customer_id = %s",
+                    (customer_id,)
+                )
+                customer_result = cur.fetchone()
+                if not customer_result:
+                    return _response(404, {"message": "Customer not found"})
+                customer_name = f"{customer_result['first_name']} {customer_result['last_name']}"
+            
+            # 6) Get total count of reviews CREATED BY this customer
             count_sql = """
                 SELECT COUNT(*) as total_count
                 FROM customer_provider_reviews
-                WHERE reviewee_id = %s AND reviewee_type = 'customer'
+                WHERE customer_id = %s
             """
             cur.execute(count_sql, (customer_id,))
             count_result = cur.fetchone()
             total_count = int(count_result['total_count']) if count_result else 0
             
-            # 6) Get customer's rating summary
-            summary_sql = """
-                SELECT 
-                    average_rating,
-                    total_review_count,
-                    first_name,
-                    last_name
-                FROM customers
-                WHERE customer_id = %s
-            """
-            cur.execute(summary_sql, (customer_id,))
-            summary_result = cur.fetchone()
-            
-            if not summary_result:
-                return _response(404, {"message": "Customer not found"})
-            
-            average_rating = float(summary_result['average_rating']) if summary_result['average_rating'] else 0.0
-            
-            # 7) Get reviews with reviewer information
+            # 7) Get reviews with provider information (reviewee)
             sort_clause = _get_sort_clause(sort_option)
             
             reviews_sql = f"""
                 SELECT 
                     r.review_id,
                     r.job_id,
-                    r.reviewer_id,
-                    r.reviewer_type,
+                    r.provider_id,
                     r.rating,
                     r.comment,
                     r.created_at,
-                    CASE 
-                        WHEN r.reviewer_type = 'customer' THEN CONCAT(c.first_name, ' ', c.last_name)
-                        WHEN r.reviewer_type = 'provider' THEN sp.business_name
-                    END as reviewer_name
+                    r.updated_at,
+                    sp.business_name as provider_name,
+                    sp.average_rating as provider_rating
                 FROM customer_provider_reviews r
-                LEFT JOIN customers c ON r.reviewer_id = c.customer_id AND r.reviewer_type = 'customer'
-                LEFT JOIN service_providers sp ON r.reviewer_id = sp.provider_id AND r.reviewer_type = 'provider'
-                WHERE r.reviewee_id = %s AND r.reviewee_type = 'customer'
+                LEFT JOIN service_providers sp ON r.provider_id = sp.provider_id
+                WHERE r.customer_id = %s
                 ORDER BY {sort_clause}
                 LIMIT %s OFFSET %s
             """
@@ -174,12 +173,13 @@ def handler(event, context):
                 reviews.append({
                     "review_id": row['review_id'],
                     "job_id": row['job_id'],
-                    "reviewer_id": row['reviewer_id'],
-                    "reviewer_name": row['reviewer_name'] or "Unknown",
-                    "reviewer_type": row['reviewer_type'],
+                    "provider_id": row['provider_id'],
+                    "provider_name": row['provider_name'] or "Unknown",
+                    "provider_rating": float(row['provider_rating']) if row['provider_rating'] else 0.0,
                     "rating": row['rating'],
                     "comment": row['comment'],
-                    "created_at": row['created_at'].isoformat() if row['created_at'] else None
+                    "created_at": row['created_at'].isoformat() if row['created_at'] else None,
+                    "updated_at": row['updated_at'].isoformat() if row['updated_at'] else None
                 })
             
             # 9) Build response
@@ -196,16 +196,16 @@ def handler(event, context):
                         "has_more": has_more,
                         "next_offset": offset + limit if has_more else None
                     },
-                    "summary": {
-                        "customer_name": f"{summary_result['first_name']} {summary_result['last_name']}",
-                        "average_rating": average_rating,
-                        "total_reviews": total_count
+                    "customer": {
+                        "customer_id": customer_id,
+                        "name": customer_name,
+                        "total_reviews_written": total_count
                     }
                 }
             )
     
     except Exception as e:
-        print(f"Error in get_customer_provider_reviews: {e}")
+        print(f"Error in get_my_customer_reviews: {e}")
         import traceback
         traceback.print_exc()
         return _response(
@@ -223,50 +223,20 @@ def handler(event, context):
 # Local testing
 if __name__ == "__main__":
     print("=" * 70)
-    print("Testing GET /reviews/customer/{customer_id}")
+    print("Testing GET /customer/reviews (my reviews)")
     print("=" * 70)
     
-    # Test 1: Get reviews for Customer 2 (KunPeng Yang - best rating)
-    print("\n📋 Test 1: Get reviews for Customer 2 (default params)")
+    # Test 1: Get reviews created by customer 1
+    print("\n📋 Test 1: Get reviews created by Customer 1")
     print("-" * 70)
     test_event_1 = {
-        "customer_id": 2,
+        "customer_id": 1,
         "sort": "newest",
         "limit": 10,
         "offset": 0
     }
     
     result = handler(test_event_1, None)
-    print(f"Status Code: {result['statusCode']}")
-    print("Response:")
-    print(json.dumps(json.loads(result['body']), indent=2))
-    
-    # Test 2: Get reviews sorted by highest rating
-    print("\n📋 Test 2: Get reviews for Customer 1 (sorted by highest rating)")
-    print("-" * 70)
-    test_event_2 = {
-        "customer_id": 1,
-        "sort": "highest_rating",
-        "limit": 5,
-        "offset": 0
-    }
-    
-    result = handler(test_event_2, None)
-    print(f"Status Code: {result['statusCode']}")
-    print("Response:")
-    print(json.dumps(json.loads(result['body']), indent=2))
-    
-    # Test 3: Invalid customer_id
-    print("\n📋 Test 3: Invalid customer_id (should return 404)")
-    print("-" * 70)
-    test_event_3 = {
-        "customer_id": 9999,
-        "sort": "newest",
-        "limit": 10,
-        "offset": 0
-    }
-    
-    result = handler(test_event_3, None)
     print(f"Status Code: {result['statusCode']}")
     print("Response:")
     print(json.dumps(json.loads(result['body']), indent=2))
