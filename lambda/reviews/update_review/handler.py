@@ -125,7 +125,7 @@ def handler(event, context):
     
     # 3) Extract user_id for ownership verification
     # For local testing, use user_id from event
-    # For production, extract from JWT token claims
+    # For production, extract from JWT token claims and map to customer_id
     user_id = event.get("user_id")
     user_type = event.get("user_type", "customer")  # Default to customer for testing
     
@@ -134,10 +134,12 @@ def handler(event, context):
         request_context = event.get("requestContext", {})
         authorizer = request_context.get("authorizer", {})
         jwt_claims = authorizer.get("jwt", {}).get("claims", {})
-        user_id = jwt_claims.get("sub") or jwt_claims.get("username")
         
-        if not user_id:
-            return _response(401, {"message": "Unauthorized - missing user identification"})
+        # Get email from JWT claims
+        email = jwt_claims.get("email")
+        
+        if not email:
+            return _response(401, {"message": "Unauthorized - missing email in JWT token"})
     
     # 4) Connect to database
     conn = get_connection()
@@ -146,7 +148,19 @@ def handler(event, context):
     
     try:
         with conn.cursor() as cur:
-            # 5) Get existing review
+            # 5) If user_id not set (JWT flow), look up customer_id by email
+            if not user_id and 'email' in locals():
+                cur.execute(
+                    "SELECT customer_id FROM customers WHERE email = %s",
+                    (email,)
+                )
+                customer_result = cur.fetchone()
+                if not customer_result:
+                    return _response(403, {"message": "Customer not found for this email"})
+                user_id = customer_result['customer_id']
+                user_type = "customer"
+            
+            # 6) Get existing review
             cur.execute(
                 """
                 SELECT 
@@ -170,7 +184,7 @@ def handler(event, context):
             if not review:
                 return _response(404, {"message": "Review not found"})
             
-            # 6) Verify ownership
+            # 7) Verify ownership
             # Convert user_id to match reviewer_id type
             reviewer_id = review["reviewer_id"]
             try:
@@ -181,7 +195,7 @@ def handler(event, context):
             if reviewer_id != user_id_int:
                 return _response(403, {"message": "You can only update your own reviews"})
             
-            # 7) Check time limit (30 days)
+            # 8) Check time limit (30 days)
             created_at = review["created_at"]
             now = datetime.now()
             
@@ -196,14 +210,14 @@ def handler(event, context):
                     {"message": "Cannot update reviews older than 30 days"}
                 )
             
-            # 8) Prepare update
+            # 9) Prepare update
             old_rating = review["rating"]
             new_rating = data.get("rating", old_rating)
             new_comment = data.get("comment", review["comment"]).strip()
             
             rating_changed = (new_rating != old_rating)
             
-            # 9) Update review
+            # 10) Update review
             cur.execute(
                 """
                 UPDATE reviews
@@ -213,7 +227,7 @@ def handler(event, context):
                 (new_rating, new_comment, review_id)
             )
             
-            # 10) Recalculate rating if changed
+            # 11) Recalculate rating if changed
             if rating_changed:
                 delta = new_rating - old_rating
                 reviewee_id = review["reviewee_id"]
@@ -246,7 +260,7 @@ def handler(event, context):
             
             conn.commit()
             
-            # 11) Fetch updated review
+            # 12) Fetch updated review
             cur.execute(
                 """
                 SELECT 
@@ -267,7 +281,7 @@ def handler(event, context):
             )
             updated_review = cur.fetchone()
             
-            # 12) Build success response
+            # 13) Build success response
             return _response(
                 200,
                 {
