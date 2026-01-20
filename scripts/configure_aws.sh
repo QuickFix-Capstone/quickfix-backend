@@ -1,11 +1,21 @@
 #!/usr/bin/env bash
 # Configure AWS credentials for QuickFix deployment
+# NOTE: Never commit real credentials. Use environment variables or AWS profiles.
 
 set -e
 
-AWS_ACCESS_KEY_ID="YOUR_AWS_ACCESS_KEY_ID"
-AWS_SECRET_ACCESS_KEY="YOUR_AWS_SECRET_ACCESS_KEY"
-AWS_REGION="us-east-2"
+# These should be set as environment variables, not hardcoded
+if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+    echo "❌ Error: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set as environment variables"
+    echo ""
+    echo "Usage:"
+    echo "  export AWS_ACCESS_KEY_ID=your_access_key"
+    echo "  export AWS_SECRET_ACCESS_KEY=your_secret_key"
+    echo "  ./configure_aws.sh"
+    exit 1
+fi
+
+AWS_REGION="${AWS_REGION:-us-east-2}"
 
 echo "🔐 Configuring AWS credentials..."
 

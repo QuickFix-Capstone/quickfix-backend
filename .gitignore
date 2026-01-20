@@ -31,3 +31,4 @@ wheels/
 # IDEs
 .vscode/
 .idea/
+scripts/configure_aws.sh
