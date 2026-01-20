@@ -181,7 +181,7 @@ def handler(event, context):
             # 6) Get total count of reviews for this job
             count_sql = """
                 SELECT COUNT(*) as total_count
-                FROM reviews
+                FROM customer_provider_reviews
                 WHERE job_id = %s
             """
             cur.execute(count_sql, (job_id,))
@@ -210,7 +210,7 @@ def handler(event, context):
                         WHEN r.reviewee_type = 'customer' THEN CONCAT(c_reviewee.first_name, ' ', c_reviewee.last_name)
                         WHEN r.reviewee_type = 'provider' THEN sp_reviewee.business_name
                     END as reviewee_name
-                FROM reviews r
+                FROM customer_provider_reviews r
                 LEFT JOIN customers c_reviewer ON r.reviewer_id = c_reviewer.customer_id AND r.reviewer_type = 'customer'
                 LEFT JOIN service_providers sp_reviewer ON r.reviewer_id = sp_reviewer.provider_id AND r.reviewer_type = 'provider'
                 LEFT JOIN customers c_reviewee ON r.reviewee_id = c_reviewee.customer_id AND r.reviewee_type = 'customer'

@@ -60,7 +60,7 @@ def _update_provider_rating(conn, provider_id: str) -> Dict[str, Any]:
             SELECT
                 COUNT(*) as total_review_count,
                 COALESCE(SUM(rating), 0) as total_rating_points
-            FROM reviews
+            FROM customer_provider_reviews
             WHERE reviewee_id = %s AND reviewee_type = 'provider'
         """
         cur.execute(sql, (provider_id,))
@@ -113,7 +113,7 @@ def _update_customer_rating(conn, customer_id: int) -> Dict[str, Any]:
             SELECT
                 COUNT(*) as total_review_count,
                 COALESCE(SUM(rating), 0) as total_rating_points
-            FROM reviews
+            FROM customer_provider_reviews
             WHERE reviewee_id = %s AND reviewee_type = 'customer'
         """
         cur.execute(sql, (customer_id,))

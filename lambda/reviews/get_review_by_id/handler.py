@@ -83,7 +83,7 @@ def handler(event, context):
                     comment,
                     created_at,
                     updated_at
-                FROM reviews
+                FROM customer_provider_reviews
                 WHERE review_id = %s
             """
             cur.execute(sql, (review_id,))

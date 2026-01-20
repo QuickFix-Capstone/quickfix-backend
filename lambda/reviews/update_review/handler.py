@@ -174,7 +174,7 @@ def handler(event, context):
                     comment,
                     created_at,
                     updated_at
-                FROM reviews
+                FROM customer_provider_reviews
                 WHERE review_id = %s
                 """,
                 (review_id,)
@@ -220,7 +220,7 @@ def handler(event, context):
             # 10) Update review
             cur.execute(
                 """
-                UPDATE reviews
+                UPDATE customer_provider_reviews
                 SET rating = %s, comment = %s, updated_at = NOW()
                 WHERE review_id = %s
                 """,
@@ -274,7 +274,7 @@ def handler(event, context):
                     comment,
                     created_at,
                     updated_at
-                FROM reviews
+                FROM customer_provider_reviews
                 WHERE review_id = %s
                 """,
                 (review_id,)
