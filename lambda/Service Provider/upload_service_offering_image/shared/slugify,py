@@ -1,0 +1,39 @@
+import re
+
+
+def slugify(text: str) -> str:
+    """
+    Converts a string into a safe, URL- and filename-friendly slug.
+
+    Example:
+        "Emergency Plumbing Repair 🚿🔥"
+        → "emergency-plumbing-repair"
+
+    Rules:
+    - Lowercase
+    - Remove emojis & special characters
+    - Replace spaces/underscores with hyphens
+    - Collapse multiple hyphens
+    - Trim leading/trailing hyphens
+    """
+
+    if not text:
+        return "service"
+
+    # Convert to lowercase and strip whitespace
+    text = text.lower().strip()
+
+    # Remove anything that isn't alphanumeric, space, underscore, or hyphen
+    text = re.sub(r"[^\w\s-]", "", text)
+
+    # Replace spaces and underscores with hyphens
+    text = re.sub(r"[\s_]+", "-", text)
+
+    # Collapse multiple hyphens into one
+    text = re.sub(r"-{2,}", "-", text)
+
+    # Remove leading/trailing hyphens
+    text = text.strip("-")
+
+    # Fallback if slug becomes empty
+    return text or "service"

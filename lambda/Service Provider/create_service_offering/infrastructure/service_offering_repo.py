@@ -55,3 +55,34 @@ class ServiceOfferingRepository:
 
         finally:
             connection.close()
+
+    def get_by_provider_id(self, provider_id: str):
+        connection = get_connection()
+
+        try:
+            with connection.cursor() as cursor:
+                sql = """
+                    SELECT
+                        service_offering_id,
+                        provider_id,
+                        title,
+                        description,
+                        category,
+                        price,
+                        pricing_type,
+                        rating,
+                        main_image_url,
+                        is_active,
+                        created_at
+                    FROM service_offerings
+                    WHERE provider_id = %s
+                    ORDER BY created_at DESC
+                """
+                cursor.execute(sql, (provider_id,))
+                return cursor.fetchall()
+
+        except pymysql.MySQLError as e:
+            raise RuntimeError(f"Failed to fetch offerings: {e}")
+
+        finally:
+            connection.close()

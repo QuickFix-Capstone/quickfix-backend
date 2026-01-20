@@ -20,7 +20,7 @@ def lambda_handler(event, context):
             return response(401, {"error": "Unauthorized"})
 
         # Require key claims
-        required_claims = ["sub", "cognito:username"]
+        required_claims = ["sub"]
         missing_claims = [c for c in required_claims if c not in claims]
         if missing_claims:
             return response(401, {"error": f"Invalid token. Missing: {missing_claims}"})
@@ -30,21 +30,16 @@ def lambda_handler(event, context):
         # ==============================
         # 1️⃣ ROLE CHECK: COGNITO GROUP
         # ==============================
-        groups = claims.get("cognito:groups", [])
-        # Sometimes groups can arrive as a string; normalize to list
-        if isinstance(groups, str):
-            groups = [groups]
+        provider_repo = ServiceProviderRepository()
 
-        if "ServiceProvider" not in groups:
-            return response(403, {"error": "Forbidden: must be a ServiceProvider"})
+        provider = provider_repo.get_by_cognito_sub(cognito_sub)
+        if not provider:
+            return response(403, {"error": "Service provider profile not found"})
+
 
         # ==============================
         # 2️⃣ DB CHECK: SERVICE PROVIDER EXISTS
         # ==============================
-        provider_repo = ServiceProviderRepository()
-
-        # ✅ You should implement this method if you don't have it yet:
-        # get_by_cognito_sub(sub) -> provider record/dict or None
         provider = provider_repo.get_by_cognito_sub(cognito_sub)
 
         if not provider:

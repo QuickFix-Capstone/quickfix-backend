@@ -48,3 +48,34 @@ CREATE TABLE service_offerings (
 ALTER TABLE service_providers
 ADD COLUMN cognito_sub VARCHAR(64) NOT NULL UNIQUE
 AFTER provider_id;
+ALTER TABLE service_providers
+ADD COLUMN phone_number VARCHAR(20)
+AFTER email;
+CREATE TABLE admins (
+    admin_id VARCHAR(40) NOT NULL,
+    cognito_sub VARCHAR(64) NOT NULL UNIQUE,
+    name VARCHAR(100) NOT NULL,
+    email VARCHAR(150) NOT NULL UNIQUE,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME,
+    PRIMARY KEY (admin_id)
+);
+INSERT INTO admins (
+        admin_id,
+        cognito_sub,
+        name,
+        email,
+        is_active,
+        created_at,
+        updated_at
+    )
+VALUES (
+        'admin_id:varchar',
+        'cognito_sub:varchar',
+        'name:varchar',
+        'email:varchar',
+        'is_active:tinyint',
+        'created_at:datetime',
+        'updated_at:datetime'
+    );
