@@ -21,7 +21,10 @@ def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
 
 def handler(event, context):
     """
-    Lambda entrypoint for deleting a review.
+    Lambda entrypoint for deleting a customer review about a provider.
+    
+    This deletes a review from the customer_provider_reviews table.
+    Only the customer who created the review can delete it, and only within 30 days.
     
     Path Parameters:
         review_id: The review's ID (from URL path)
@@ -94,10 +97,8 @@ def handler(event, context):
                 SELECT 
                     review_id,
                     job_id,
-                    reviewer_id,
-                    reviewer_type,
-                    reviewee_id,
-                    reviewee_type,
+                    customer_id,
+                    provider_id,
                     rating,
                     comment,
                     created_at
@@ -111,14 +112,14 @@ def handler(event, context):
             if not review:
                 return _response(404, {"message": "Review not found"})
             
-            # 6) Verify ownership
-            reviewer_id = review["reviewer_id"]
+            # 6) Verify ownership (customer must own this review)
+            customer_id = review["customer_id"]
             try:
                 user_id_int = int(user_id)
             except (ValueError, TypeError):
                 user_id_int = user_id
             
-            if reviewer_id != user_id_int:
+            if customer_id != user_id_int:
                 return _response(403, {"message": "You can only delete your own reviews"})
             
             # 7) Check time limit (30 days)
@@ -138,8 +139,7 @@ def handler(event, context):
             
             # 8) Store review data for rating recalculation
             deleted_rating = review["rating"]
-            reviewee_id = review["reviewee_id"]
-            reviewee_type = review["reviewee_type"]
+            provider_id = review["provider_id"]
             
             # 9) Delete the review
             cur.execute(
@@ -147,39 +147,22 @@ def handler(event, context):
                 (review_id,)
             )
             
-            # 10) Recalculate rating (embedded logic)
-            if reviewee_type == "provider":
-                # Update provider rating
-                cur.execute(
-                    """
-                    UPDATE service_providers
-                    SET 
-                        total_rating_points = total_rating_points - %s,
-                        total_review_count = total_review_count - 1,
-                        average_rating = CASE 
-                            WHEN total_review_count - 1 = 0 THEN 0.00
-                            ELSE (total_rating_points - %s) / (total_review_count - 1)
-                        END
-                    WHERE provider_id = %s
-                    """,
-                    (deleted_rating, deleted_rating, reviewee_id)
-                )
-            else:
-                # Update customer rating
-                cur.execute(
-                    """
-                    UPDATE customers
-                    SET 
-                        total_rating_points = total_rating_points - %s,
-                        total_review_count = total_review_count - 1,
-                        average_rating = CASE 
-                            WHEN total_review_count - 1 = 0 THEN 0.00
-                            ELSE (total_rating_points - %s) / (total_review_count - 1)
-                        END
-                    WHERE customer_id = %s
-                    """,
-                    (deleted_rating, deleted_rating, reviewee_id)
-                )
+            # 10) Recalculate provider rating
+            # Update provider's average rating after deleting the review
+            cur.execute(
+                """
+                UPDATE service_providers
+                SET 
+                    total_rating_points = total_rating_points - %s,
+                    total_review_count = total_review_count - 1,
+                    average_rating = CASE 
+                        WHEN total_review_count - 1 = 0 THEN 0.00
+                        ELSE (total_rating_points - %s) / (total_review_count - 1)
+                    END
+                WHERE provider_id = %s
+                """,
+                (deleted_rating, deleted_rating, provider_id)
+            )
             
             conn.commit()
             
@@ -198,7 +181,7 @@ def handler(event, context):
             )
     
     except Exception as e:
-        print(f"Error in delete_review: {e}")
+        print(f"Error in delete_customer_review_to_provider: {e}")
         import traceback
         traceback.print_exc()
         return _response(
