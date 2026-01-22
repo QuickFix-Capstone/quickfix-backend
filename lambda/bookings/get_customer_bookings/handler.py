@@ -99,8 +99,7 @@ def handler(event, context):
                     b.estimated_price, b.final_price, b.notes,
                     b.created_at, b.updated_at, b.completed_at,
                     sp.name AS provider_name,
-                    sp.business_name AS provider_business_name,
-                    sp.rating AS provider_rating
+                    sp.business_name AS provider_business_name
                 FROM bookings b
                 JOIN service_providers sp ON b.provider_id = sp.provider_id
                 WHERE b.customer_id = %s
@@ -138,8 +137,7 @@ def handler(event, context):
                 "provider": {
                     "provider_id": row["provider_id"],
                     "name": row["provider_name"],
-                    "business_name": row["provider_business_name"],
-                    "rating": float(row["provider_rating"]) if row["provider_rating"] else 0.0
+                    "business_name": row["provider_business_name"]
                 },
                 "service_category": row["service_category"],
                 "service_description": row["service_description"],
