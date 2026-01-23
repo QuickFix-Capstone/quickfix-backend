@@ -4,12 +4,14 @@ CREATE TABLE customers (
     customer_id BIGINT AUTO_INCREMENT PRIMARY KEY,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
-    email VARCHAR(255) NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL,
     phone VARCHAR(20) NULL,
     address VARCHAR(255) NULL,
     city VARCHAR(100) NULL,
     state VARCHAR(100) NULL,
     postal_code VARCHAR(20) NULL,
+    cognito_sub VARCHAR(255) NULL UNIQUE,
+    avatar_url VARCHAR(512) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE service_providers (
@@ -66,3 +68,85 @@ WHERE t1.provider_id > t2.provider_id
     AND t1.email = t2.email;
 ALTER TABLE service_providers
 ADD CONSTRAINT uq_service_providers_email UNIQUE (email);
+ALTER TABLE customers
+ADD COLUMN avatar_url VARCHAR(512) NULL COMMENT 'S3 URL for customer profile avatar';
+DESCRIBE customers;
+-- Bookings table
+CREATE TABLE bookings (
+    booking_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    customer_id BIGINT NOT NULL,
+    provider_id VARCHAR(40) NOT NULL,
+    -- Changed to match service_providers.provider_id type
+    service_category VARCHAR(100) NOT NULL,
+    service_description TEXT NOT NULL,
+    scheduled_date DATE NOT NULL,
+    scheduled_time TIME NOT NULL,
+    status ENUM(
+        'pending',
+        'confirmed',
+        'in_progress',
+        'completed',
+        'cancelled'
+    ) NOT NULL DEFAULT 'pending',
+    service_address VARCHAR(255) NOT NULL,
+    service_city VARCHAR(100) NOT NULL,
+    service_state VARCHAR(100) NOT NULL,
+    service_postal_code VARCHAR(20) NOT NULL,
+    estimated_price DECIMAL(10, 2) NULL,
+    final_price DECIMAL(10, 2) NULL,
+    notes TEXT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP NULL,
+    CONSTRAINT fk_booking_customer FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE CASCADE,
+    CONSTRAINT fk_booking_provider FOREIGN KEY (provider_id) REFERENCES service_providers(provider_id) ON DELETE CASCADE,
+    INDEX idx_customer_id (customer_id),
+    INDEX idx_provider_id (provider_id),
+    INDEX idx_status (status),
+    INDEX idx_scheduled_date (scheduled_date)
+);
+describe service_providers;
+-- Jobs table
+CREATE TABLE jobs (
+    job_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    customer_id BIGINT NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL,
+    category VARCHAR(100) NULL,
+    location_address VARCHAR(500) NOT NULL,
+    location_city VARCHAR(100) NULL,
+    location_state VARCHAR(50) NULL,
+    location_zip VARCHAR(20) NULL,
+    preferred_date DATE NULL,
+    preferred_time TIME NULL,
+    budget_min DECIMAL(10, 2) NULL,
+    budget_max DECIMAL(10, 2) NULL,
+    status ENUM(
+        'open',
+        'assigned',
+        'in_progress',
+        'completed',
+        'cancelled'
+    ) NOT NULL DEFAULT 'open',
+    assigned_provider_id VARCHAR(40) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_job_customer FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE CASCADE,
+    INDEX idx_customer_id (customer_id),
+    INDEX idx_status (status),
+    INDEX idx_category (category)
+);
+-- Job applications table
+CREATE TABLE job_applications (
+    application_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    job_id BIGINT NOT NULL,
+    provider_id VARCHAR(40) NOT NULL,
+    proposed_price DECIMAL(10, 2) NULL,
+    message TEXT NULL,
+    status ENUM('pending', 'accepted', 'rejected') NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_application_job FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE,
+    UNIQUE KEY unique_application (job_id, provider_id),
+    INDEX idx_job_id (job_id),
+    INDEX idx_provider_id (provider_id)
+);

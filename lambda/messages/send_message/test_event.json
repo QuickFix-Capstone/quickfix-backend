@@ -1,0 +1,12 @@
+{
+    "requestContext": {
+        "authorizer": {
+            "jwt": {
+                "claims": {
+                    "sub": "415b3510-a0a1-708e-6a02-dc457aec9ecc"
+                }
+            }
+        }
+    },
+    "body": "{\"conversationId\":\"a103818f-ed02-4f47-9dd3-def9e2a5bfcd\",\"text\":\"Hello, when can you start?\"}"
+}

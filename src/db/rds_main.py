@@ -1,11 +1,14 @@
 import os
 import pymysql
-from dotenv import load_dotenv
-from pymysql.constants import FIELD_TYPE
 
-# Load environment variables from .env file
-load_dotenv()
-# decimal_to_float = {FIELD_TYPE.DECIMAL: float}
+# Load environment variables from .env file (only for local development)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # dotenv not available (e.g., in Lambda), use environment variables directly
+    pass
+
 
 
 def get_connection():
