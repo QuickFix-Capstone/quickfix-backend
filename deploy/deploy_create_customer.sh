@@ -30,4 +30,10 @@ aws lambda update-function-code \
   --zip-file "fileb://.build/${ZIP_FILE}" \
   --region "$AWS_REGION"
 
+echo "👉 Updating Lambda environment variables..."
+aws lambda update-function-configuration \
+  --function-name "$FUNC_NAME" \
+  --environment "Variables={COGNITO_USER_POOL_ID=us-east-2_45z5OMePi,AWS_REGION=${AWS_REGION}}" \
+  --region "$AWS_REGION"
+
 echo "✅ Deployed ${FUNC_NAME}"
