@@ -2,21 +2,17 @@ import json
 import sys
 import os
 from typing import Any, Dict
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 from pymysql.err import IntegrityError
 
 try:
     from src.db.rds_main import get_connection
-    from src.email.ses_service import send_booking_confirmation_email
-    from src.utils.booking_utils import generate_confirmation_token
 except ModuleNotFoundError:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, "../../.."))
     if project_root not in sys.path:
         sys.path.append(project_root)
     from src.db.rds_main import get_connection
-    from src.email.ses_service import send_booking_confirmation_email
-    from src.utils.booking_utils import generate_confirmation_token
 
 
 def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -191,65 +187,7 @@ def handler(event, context):
             conn.commit()
             booking_id = cur.lastrowid
 
-            # 9. Generate confirmation token
-            confirmation_token = generate_confirmation_token(booking_id, data["provider_id"])
-            expires_at = datetime.utcnow() + timedelta(days=7)
-            
-            # 10. Update booking with token and set status to pending_confirmation
-            cur.execute("""
-                UPDATE bookings 
-                SET confirmation_token = %s, 
-                    confirmation_token_expires_at = %s,
-                    status = 'pending_confirmation'
-                WHERE booking_id = %s
-            """, (confirmation_token, expires_at, booking_id))
-            conn.commit()
-            
-            # 11. Get provider email and details
-            cur.execute("""
-                SELECT email, name 
-                FROM service_providers 
-                WHERE provider_id = %s
-            """, (data["provider_id"],))
-            provider = cur.fetchone()
-            
-            # 12. Get customer name for email
-            cur.execute("""
-                SELECT first_name, last_name 
-                FROM customers 
-                WHERE customer_id = %s
-            """, (customer_id,))
-            customer = cur.fetchone()
-            
-            # 13. Send confirmation email to provider
-            try:
-                email_sent = send_booking_confirmation_email(
-                    provider_email=provider["email"],
-                    provider_name=provider["name"],
-                    booking_details={
-                        "booking_id": booking_id,
-                        "service_category": data["service_category"],
-                        "service_description": data.get("service_description", ""),
-                        "scheduled_date": str(data["scheduled_date"]),
-                        "scheduled_time": data["scheduled_time"],
-                        "service_address": data["service_address"],
-                        "customer_name": f"{customer['first_name']} {customer['last_name']}",
-                        "estimated_price": data.get("estimated_price")
-                    },
-                    confirmation_token=confirmation_token
-                )
-                
-                if email_sent:
-                    print(f"✅ Confirmation email sent to provider {provider['email']}")
-                else:
-                    print(f"⚠️  Warning: Failed to send confirmation email to provider")
-                    # Don't fail the booking creation if email fails
-                    
-            except Exception as email_error:
-                print(f"⚠️  Warning: Email sending error: {email_error}")
-                # Don't fail the booking creation if email fails
-
-            # 14. Fetch created booking
+            # 11. Fetch created booking
             cur.execute(
                 """
                 SELECT booking_id, customer_id, provider_id, service_category,
