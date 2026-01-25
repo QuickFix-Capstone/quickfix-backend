@@ -17,7 +17,8 @@ cp "${SRC_DIR}/handler.py" "$BUILD_DIR/"
 cp -r ../src "$BUILD_DIR/"
 
 echo "👉 Installing dependencies from ${REQ_FILE} ..."
-pip install -r "${REQ_FILE}" -t "$BUILD_DIR" > /dev/null
+python3.9 -m pip install -r "${REQ_FILE}" -t "$BUILD_DIR" 2>/dev/null || \
+  pip install -r "${REQ_FILE}" -t "$BUILD_DIR" --upgrade
 
 echo "👉 Creating zip..."
 cd "$BUILD_DIR"

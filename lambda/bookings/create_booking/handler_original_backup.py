@@ -221,44 +221,39 @@ def handler(event, context):
             """, (customer_id,))
             customer = cur.fetchone()
             
-            # 13. Send confirmation email to provider with async processing
+            # 13. Send confirmation email to provider with timeout handling
+            email_sent = False
             try:
-                # Try async email processing first
-                import boto3
-                sqs = boto3.client('sqs')
-                queue_url = os.environ.get('EMAIL_QUEUE_URL')
+                # Import the optimized SES service
+                from src.email.ses_service_optimized import send_booking_confirmation_email_fast
                 
-                if queue_url:
-                    # Send email asynchronously via SQS
-                    email_data = {
-                        'email_type': 'booking_confirmation',
-                        'booking_data': {
-                            'provider_email': provider["email"],
-                            'provider_name': provider["name"],
-                            'booking_details': {
-                                'booking_id': booking_id,
-                                'service_category': data["service_category"],
-                                'service_description': data.get("service_description", ""),
-                                'scheduled_date': str(data["scheduled_date"]),
-                                'scheduled_time': data["scheduled_time"],
-                                'service_address': data["service_address"],
-                                'customer_name': f"{customer['first_name']} {customer['last_name']}",
-                                'estimated_price': data.get("estimated_price")
-                            },
-                            'confirmation_token': confirmation_token
-                        }
-                    }
-                    
-                    response = sqs.send_message(
-                        QueueUrl=queue_url,
-                        MessageBody=json.dumps(email_data)
-                    )
-                    
-                    print(f"✅ Email queued for async processing. MessageId: {response.get('MessageId')}")
-                    email_sent = True
+                # Try to send email with 10 second timeout
+                email_sent = send_booking_confirmation_email_fast(
+                    provider_email=provider["email"],
+                    provider_name=provider["name"],
+                    booking_details={
+                        "booking_id": booking_id,
+                        "service_category": data["service_category"],
+                        "service_description": data.get("service_description", ""),
+                        "scheduled_date": str(data["scheduled_date"]),
+                        "scheduled_time": data["scheduled_time"],
+                        "service_address": data["service_address"],
+                        "customer_name": f"{customer['first_name']} {customer['last_name']}",
+                        "estimated_price": data.get("estimated_price")
+                    },
+                    confirmation_token=confirmation_token,
+                    timeout_seconds=10  # 10 second timeout
+                )
+                
+                if email_sent:
+                    print(f"✅ Confirmation email sent to provider {provider['email']}")
                 else:
-                    # Fallback to synchronous email sending
-                    print("⚠️  EMAIL_QUEUE_URL not configured, using synchronous email")
+                    print(f"⚠️  Warning: Failed to send confirmation email to provider (timeout or error)")
+                    
+            except ImportError:
+                # Fallback to original SES service if optimized version not available
+                print("⚠️  Using fallback SES service")
+                try:
                     email_sent = send_booking_confirmation_email(
                         provider_email=provider["email"],
                         provider_name=provider["name"],
@@ -274,14 +269,11 @@ def handler(event, context):
                         },
                         confirmation_token=confirmation_token
                     )
-                
-                if email_sent:
-                    print(f"✅ Email processing initiated for provider {provider['email']}")
-                else:
-                    print(f"⚠️  Warning: Failed to process email for provider")
+                except Exception as fallback_error:
+                    print(f"⚠️  Fallback email also failed: {fallback_error}")
                     
             except Exception as email_error:
-                print(f"⚠️  Warning: Email processing error: {email_error}")
+                print(f"⚠️  Warning: Email sending error: {email_error}")
                 # Don't fail the booking creation if email fails
 
             # 14. Fetch created booking

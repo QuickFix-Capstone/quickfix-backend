@@ -1,13 +1,13 @@
 import json
 import sys
 import os
+import boto3
 from typing import Any, Dict
 from datetime import datetime, date, timedelta
 from pymysql.err import IntegrityError
 
 try:
     from src.db.rds_main import get_connection
-    from src.email.ses_service import send_booking_confirmation_email
     from src.utils.booking_utils import generate_confirmation_token
 except ModuleNotFoundError:
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -15,30 +15,22 @@ except ModuleNotFoundError:
     if project_root not in sys.path:
         sys.path.append(project_root)
     from src.db.rds_main import get_connection
-    from src.email.ses_service import send_booking_confirmation_email
     from src.utils.booking_utils import generate_confirmation_token
 
 
 def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Support both:
-    - API Gateway event: event["body"] is a JSON string
-    - Local testing: event itself is already a dict
-    """
+    """Support both API Gateway event and local testing"""
     if "body" not in event:
         return event
 
     body = event["body"]
-
     if isinstance(body, dict):
         return body
-
     if isinstance(body, str):
         try:
             return json.loads(body)
         except json.JSONDecodeError:
             raise ValueError("Invalid JSON body")
-
     raise ValueError("Unsupported body format")
 
 
@@ -46,43 +38,48 @@ def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
     """Standard API Gateway style response."""
     return {
         "statusCode": status_code,
-        "headers": {
-            "Content-Type": "application/json"
-        },
+        "headers": {"Content-Type": "application/json"},
         "body": json.dumps(body),
     }
 
 
+def _send_email_async(booking_data: Dict[str, Any]) -> bool:
+    """Send email notification asynchronously via SQS"""
+    try:
+        sqs = boto3.client('sqs')
+        queue_url = os.environ.get('EMAIL_QUEUE_URL')
+        
+        if not queue_url:
+            print("⚠️  EMAIL_QUEUE_URL not configured, skipping async email")
+            return False
+        
+        # Send message to SQS queue for async processing
+        message = {
+            'email_type': 'booking_confirmation',
+            'booking_data': booking_data
+        }
+        
+        response = sqs.send_message(
+            QueueUrl=queue_url,
+            MessageBody=json.dumps(message),
+            MessageAttributes={
+                'EmailType': {
+                    'StringValue': 'booking_confirmation',
+                    'DataType': 'String'
+                }
+            }
+        )
+        
+        print(f"✅ Email queued for async processing. MessageId: {response.get('MessageId')}")
+        return True
+        
+    except Exception as e:
+        print(f"⚠️  Failed to queue email: {e}")
+        return False
+
+
 def handler(event, context):
-    """
-    Create a new booking.
-    
-    Authentication:
-    - Requires JWT authorizer (Cognito)
-    - cognito_sub extracted from JWT claims
-    
-    Expected JSON input (in event["body"]):
-    {
-      "provider_id": 123,
-      "service_category": "plumber",
-      "service_description": "Fix leaking kitchen sink",
-      "scheduled_date": "2026-01-15",
-      "scheduled_time": "14:00",
-      "service_address": "123 Main St",
-      "service_city": "Toronto",
-      "service_state": "ON",
-      "service_postal_code": "M5H 1J9",
-      "estimated_price": 150.00,  # optional
-      "notes": "Please call before arriving"  # optional
-    }
-    
-    Returns:
-    - 201: Booking created successfully
-    - 400: Invalid input
-    - 401: Unauthorized
-    - 404: Provider not found or not verified
-    - 500: Server error
-    """
+    """Create a new booking with async email processing"""
     
     # 1. Extract Cognito JWT claims
     try:
@@ -150,7 +147,7 @@ def handler(event, context):
             # 8. Verify provider exists and is active
             cur.execute(
                 """
-                SELECT provider_id, name, is_active
+                SELECT provider_id, name, email, is_active
                 FROM service_providers
                 WHERE provider_id = %s
                 """,
@@ -164,7 +161,7 @@ def handler(event, context):
             if not provider_row["is_active"]:
                 return _response(400, {"message": "Service provider is not active"})
 
-            # 10. Create booking
+            # 9. Create booking
             sql = """
                 INSERT INTO bookings
                     (customer_id, provider_id, service_category, service_description,
@@ -191,11 +188,11 @@ def handler(event, context):
             conn.commit()
             booking_id = cur.lastrowid
 
-            # 9. Generate confirmation token
+            # 10. Generate confirmation token
             confirmation_token = generate_confirmation_token(booking_id, data["provider_id"])
             expires_at = datetime.utcnow() + timedelta(days=7)
             
-            # 10. Update booking with token and set status to pending_confirmation
+            # 11. Update booking with token and set status to pending_confirmation
             cur.execute("""
                 UPDATE bookings 
                 SET confirmation_token = %s, 
@@ -205,14 +202,6 @@ def handler(event, context):
             """, (confirmation_token, expires_at, booking_id))
             conn.commit()
             
-            # 11. Get provider email and details
-            cur.execute("""
-                SELECT email, name 
-                FROM service_providers 
-                WHERE provider_id = %s
-            """, (data["provider_id"],))
-            provider = cur.fetchone()
-            
             # 12. Get customer name for email
             cur.execute("""
                 SELECT first_name, last_name 
@@ -221,68 +210,25 @@ def handler(event, context):
             """, (customer_id,))
             customer = cur.fetchone()
             
-            # 13. Send confirmation email to provider with async processing
-            try:
-                # Try async email processing first
-                import boto3
-                sqs = boto3.client('sqs')
-                queue_url = os.environ.get('EMAIL_QUEUE_URL')
-                
-                if queue_url:
-                    # Send email asynchronously via SQS
-                    email_data = {
-                        'email_type': 'booking_confirmation',
-                        'booking_data': {
-                            'provider_email': provider["email"],
-                            'provider_name': provider["name"],
-                            'booking_details': {
-                                'booking_id': booking_id,
-                                'service_category': data["service_category"],
-                                'service_description': data.get("service_description", ""),
-                                'scheduled_date': str(data["scheduled_date"]),
-                                'scheduled_time': data["scheduled_time"],
-                                'service_address': data["service_address"],
-                                'customer_name': f"{customer['first_name']} {customer['last_name']}",
-                                'estimated_price': data.get("estimated_price")
-                            },
-                            'confirmation_token': confirmation_token
-                        }
-                    }
-                    
-                    response = sqs.send_message(
-                        QueueUrl=queue_url,
-                        MessageBody=json.dumps(email_data)
-                    )
-                    
-                    print(f"✅ Email queued for async processing. MessageId: {response.get('MessageId')}")
-                    email_sent = True
-                else:
-                    # Fallback to synchronous email sending
-                    print("⚠️  EMAIL_QUEUE_URL not configured, using synchronous email")
-                    email_sent = send_booking_confirmation_email(
-                        provider_email=provider["email"],
-                        provider_name=provider["name"],
-                        booking_details={
-                            "booking_id": booking_id,
-                            "service_category": data["service_category"],
-                            "service_description": data.get("service_description", ""),
-                            "scheduled_date": str(data["scheduled_date"]),
-                            "scheduled_time": data["scheduled_time"],
-                            "service_address": data["service_address"],
-                            "customer_name": f"{customer['first_name']} {customer['last_name']}",
-                            "estimated_price": data.get("estimated_price")
-                        },
-                        confirmation_token=confirmation_token
-                    )
-                
-                if email_sent:
-                    print(f"✅ Email processing initiated for provider {provider['email']}")
-                else:
-                    print(f"⚠️  Warning: Failed to process email for provider")
-                    
-            except Exception as email_error:
-                print(f"⚠️  Warning: Email processing error: {email_error}")
-                # Don't fail the booking creation if email fails
+            # 13. Queue email for async processing (non-blocking)
+            email_data = {
+                "provider_email": provider_row["email"],
+                "provider_name": provider_row["name"],
+                "booking_details": {
+                    "booking_id": booking_id,
+                    "service_category": data["service_category"],
+                    "service_description": data.get("service_description", ""),
+                    "scheduled_date": str(data["scheduled_date"]),
+                    "scheduled_time": data["scheduled_time"],
+                    "service_address": data["service_address"],
+                    "customer_name": f"{customer['first_name']} {customer['last_name']}",
+                    "estimated_price": data.get("estimated_price")
+                },
+                "confirmation_token": confirmation_token
+            }
+            
+            # Send email asynchronously - don't wait for result
+            _send_email_async(email_data)
 
             # 14. Fetch created booking
             cur.execute(
@@ -321,7 +267,8 @@ def handler(event, context):
 
         return _response(201, {
             "message": "Booking created successfully",
-            "booking": booking
+            "booking": booking,
+            "email_status": "queued_for_processing"
         })
 
     except IntegrityError as e:
@@ -337,37 +284,3 @@ def handler(event, context):
             conn.close()
         except Exception:
             pass
-
-
-# Local testing
-if __name__ == "__main__":
-    # Test event with mock JWT claims
-    test_event = {
-        "requestContext": {
-            "authorizer": {
-                "jwt": {
-                    "claims": {
-                        "sub": "415b3510-a0a1-708e-6a02-dc457aec9ecc"
-                    }
-                }
-            }
-        },
-        "body": json.dumps({
-            "provider_id": "SP-001",
-            "service_category": "plumber",
-            "service_description": "Fix leaking kitchen sink",
-            "scheduled_date": "2026-01-15",
-            "scheduled_time": "14:00",
-            "service_address": "123 Main St",
-            "service_city": "Toronto",
-            "service_state": "ON",
-            "service_postal_code": "M5H 1J9",
-            "estimated_price": 150.00,
-            "notes": "Please call before arriving"
-        })
-    }
-
-    print("🔍 Running local test for create_booking.handler()...")
-    result = handler(test_event, None)
-    print("Response:")
-    print(json.dumps(result, indent=2))
