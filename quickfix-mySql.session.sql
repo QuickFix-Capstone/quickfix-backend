@@ -150,7 +150,7 @@ CREATE TABLE IF NOT EXISTS job_applications (
 DESCRIBE jobs;
 DESCRIBE job_applications;
 DESCRIBE orders;
-SELECT 
+SELECT
     TABLE_NAME,
     COLUMN_NAME,
     CONSTRAINT_NAME,
@@ -162,3 +162,9 @@ WHERE
     TABLE_SCHEMA = 'quickfix'
     AND TABLE_NAME = 'orders'
     AND REFERENCED_TABLE_NAME IS NOT NULL;
+
+-- ============================================
+-- Delete service provider by email
+-- ============================================
+DELETE FROM service_providers
+WHERE email = 'ykphrfly@gmail.com';
