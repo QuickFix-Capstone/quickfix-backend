@@ -242,18 +242,18 @@ if __name__ == "__main__":
             "authorizer": {
                 "jwt": {
                     "claims": {
-                        "sub": "415b3510-a0a1-708e-6a02-dc457aec9ecc"
+                        "sub": "917b35d0-9081-7071-db85-393f665485da"  # AjayTest customer
                     }
                 }
             }
         },
         "pathParameters": {
-            "booking_id": "1"
+            "booking_id": "75"  # Booking owned by AjayTest
         },
         "body": json.dumps({
             "file_name": "kitchen_photo.jpg",
             "content_type": "image/jpeg",
-            "image_order": 1
+            "image_order": 3  # Using available order
         })
     }
 
