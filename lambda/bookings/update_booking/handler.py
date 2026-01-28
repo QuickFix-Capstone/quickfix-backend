@@ -2,6 +2,7 @@ import json
 import sys
 import os
 from typing import Any, Dict
+from datetime import datetime, date, time
 from pymysql.err import IntegrityError
 
 try:
@@ -42,10 +43,43 @@ def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "statusCode": status_code,
         "headers": {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Content-Type,Authorization",
+            "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS"
         },
         "body": json.dumps(body),
     }
+
+
+def validate_reschedule_datetime(scheduled_date, scheduled_time):
+    """
+    Validate that the new scheduled date/time is in the future.
+    
+    Args:
+        scheduled_date: Date string (YYYY-MM-DD) or date object
+        scheduled_time: Time string (HH:MM:SS) or time object
+    
+    Returns:
+        tuple: (is_valid: bool, error_message: str or None)
+    """
+    try:
+        # Convert strings to date/time objects if needed
+        if isinstance(scheduled_date, str):
+            scheduled_date = date.fromisoformat(scheduled_date)
+        if isinstance(scheduled_time, str):
+            scheduled_time = time.fromisoformat(scheduled_time)
+        
+        # Combine date and time
+        scheduled_datetime = datetime.combine(scheduled_date, scheduled_time)
+        
+        # Check if in the future
+        if scheduled_datetime <= datetime.now():
+            return False, "Scheduled date and time must be in the future"
+        
+        return True, None
+    except (ValueError, TypeError) as e:
+        return False, f"Invalid date/time format: {str(e)}"
 
 
 def handler(event, context):
@@ -127,7 +161,7 @@ def handler(event, context):
             # 7. Get current booking
             cur.execute(
                 """
-                SELECT booking_id, customer_id, status
+                SELECT booking_id, customer_id, status, scheduled_date, scheduled_time
                 FROM bookings
                 WHERE booking_id = %s
                 """,
@@ -144,15 +178,39 @@ def handler(event, context):
 
         current_status = booking_row["status"]
 
-        # 9. Validate status transition if status is being updated
+        # 9. Define allowed transitions and updatable fields for customers
+        allowed_transitions = {
+            "pending": ["cancelled", "pending_reschedule"],
+            "pending_confirmation": ["cancelled"],
+            "confirmed": ["cancelled", "pending_reschedule"],
+            "pending_reschedule": ["cancelled", "confirmed"],
+            "in_progress": [],
+            "completed": [],
+            "cancelled": []
+        }
+        
+        updatable_fields = {
+            "pending": ["status", "notes", "scheduled_date", "scheduled_time", 
+                       "service_address", "service_city", "service_state", "service_postal_code"],
+            "pending_confirmation": ["status", "notes"],
+            "confirmed": ["status", "notes", "scheduled_date", "scheduled_time"],
+            "pending_reschedule": ["status", "notes", "scheduled_date", "scheduled_time"],
+            "in_progress": [],
+            "completed": [],
+            "cancelled": []
+        }
+        
+        # 10. Validate which fields can be updated based on current status
+        allowed_fields = updatable_fields.get(current_status, [])
+        for field in data.keys():
+            if field not in allowed_fields:
+                return _response(400, {
+                    "message": f"Cannot update '{field}' when booking status is '{current_status}'"
+                })
+        
+        # 11. Validate status transition if status is being updated
         if "status" in data:
             new_status = data["status"]
-            
-            # Define allowed transitions for customers
-            allowed_transitions = {
-                "pending": ["cancelled"],
-                "confirmed": ["cancelled"]
-            }
             
             if current_status not in allowed_transitions:
                 return _response(400, {
@@ -163,18 +221,64 @@ def handler(event, context):
                 return _response(400, {
                     "message": f"Cannot change status from '{current_status}' to '{new_status}'"
                 })
+        
+        # 12. Validate rescheduling date/time if being updated
+        if "scheduled_date" in data or "scheduled_time" in data:
+            # Get current booking details for date/time
+            # We already fetched scheduled_date and scheduled_time in booking_row
+            current_booking_date = booking_row["scheduled_date"]
+            current_booking_time = booking_row["scheduled_time"]
+            
+            new_date = data.get("scheduled_date", current_booking_date)
+            new_time = data.get("scheduled_time", current_booking_time)
+            
+            is_valid, error_msg = validate_reschedule_datetime(new_date, new_time)
+            if not is_valid:
+                return _response(400, {"message": error_msg})
+            
+            # If confirmed booking is being rescheduled, auto-change status to pending_reschedule
+            if current_status == "confirmed" and "status" not in data:
+                data["status"] = "pending_reschedule"
 
-        # 10. Build UPDATE query
+        # 13. Build UPDATE query
         updates = []
         values = []
         
+        # Status
         if "status" in data:
             updates.append("status = %s")
             values.append(data["status"])
         
+        # Notes
         if "notes" in data:
             updates.append("notes = %s")
             values.append(data["notes"])
+        
+        # Scheduling
+        if "scheduled_date" in data:
+            updates.append("scheduled_date = %s")
+            values.append(data["scheduled_date"])
+        
+        if "scheduled_time" in data:
+            updates.append("scheduled_time = %s")
+            values.append(data["scheduled_time"])
+        
+        # Address fields
+        if "service_address" in data:
+            updates.append("service_address = %s")
+            values.append(data["service_address"])
+        
+        if "service_city" in data:
+            updates.append("service_city = %s")
+            values.append(data["service_city"])
+        
+        if "service_state" in data:
+            updates.append("service_state = %s")
+            values.append(data["service_state"])
+        
+        if "service_postal_code" in data:
+            updates.append("service_postal_code = %s")
+            values.append(data["service_postal_code"])
         
         values.append(booking_id)
         
@@ -184,7 +288,7 @@ def handler(event, context):
             cur.execute(sql, tuple(values))
             conn.commit()
 
-            # 11. Fetch updated booking
+            # 14. Fetch updated booking with full details (match get_booking_details structure)
             cur.execute(
                 """
                 SELECT 
@@ -194,9 +298,14 @@ def handler(event, context):
                     b.service_address, b.service_city, b.service_state, b.service_postal_code,
                     b.estimated_price, b.final_price, b.notes,
                     b.created_at, b.updated_at, b.completed_at,
-                    sp.first_name AS provider_first_name,
-                    sp.last_name AS provider_last_name
+                    c.first_name AS customer_first_name,
+                    c.last_name AS customer_last_name,
+                    c.email AS customer_email,
+                    c.phone AS customer_phone,
+                    sp.name AS provider_name,
+                    sp.business_name AS provider_business_name
                 FROM bookings b
+                JOIN customers c ON b.customer_id = c.customer_id
                 JOIN service_providers sp ON b.provider_id = sp.provider_id
                 WHERE b.booking_id = %s
                 """,
@@ -204,26 +313,45 @@ def handler(event, context):
             )
             row = cur.fetchone()
 
+        # Format response to match get_booking_details structure
         booking = {
             "booking_id": row["booking_id"],
-            "customer_id": row["customer_id"],
-            "provider_id": row["provider_id"],
-            "provider_name": f"{row['provider_first_name']} {row['provider_last_name']}",
-            "service_category": row["service_category"],
-            "service_description": row["service_description"],
-            "scheduled_date": str(row["scheduled_date"]),
-            "scheduled_time": str(row["scheduled_time"]),
+            "customer": {
+                "customer_id": row["customer_id"],
+                "name": f"{row['customer_first_name']} {row['customer_last_name']}",
+                "email": row["customer_email"],
+                "phone": row["customer_phone"]
+            },
+            "provider": {
+                "provider_id": row["provider_id"],
+                "name": row["provider_name"],
+                "business_name": row["provider_business_name"]
+            },
+            "service": {
+                "category": row["service_category"],
+                "description": row["service_description"]
+            },
+            "schedule": {
+                "date": str(row["scheduled_date"]),
+                "time": str(row["scheduled_time"])
+            },
             "status": row["status"],
-            "service_address": row["service_address"],
-            "service_city": row["service_city"],
-            "service_state": row["service_state"],
-            "service_postal_code": row["service_postal_code"],
-            "estimated_price": float(row["estimated_price"]) if row["estimated_price"] else None,
-            "final_price": float(row["final_price"]) if row["final_price"] else None,
+            "location": {
+                "address": row["service_address"],
+                "city": row["service_city"],
+                "state": row["service_state"],
+                "postal_code": row["service_postal_code"]
+            },
+            "pricing": {
+                "estimated_price": float(row["estimated_price"]) if row["estimated_price"] else None,
+                "final_price": float(row["final_price"]) if row["final_price"] else None
+            },
             "notes": row["notes"],
-            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
-            "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
-            "completed_at": row["completed_at"].isoformat() if row["completed_at"] else None
+            "timestamps": {
+                "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+                "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+                "completed_at": row["completed_at"].isoformat() if row["completed_at"] else None
+            }
         }
 
         return _response(200, {
