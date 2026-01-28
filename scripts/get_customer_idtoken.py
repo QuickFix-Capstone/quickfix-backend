@@ -15,8 +15,8 @@ CLIENT_ID = "p2u5qdegml3hp60n6ohu52n2b"
 REGION = "us-east-2"
 
 # Customer Credentials
-EMAIL = "ajaypersaudyt@gmail.com"
-PASSWORD = "Ajay@2003"
+EMAIL = "ykphrfly@gmail.com"
+PASSWORD = "Yang@860101"
 
 
 def get_fresh_id_token():

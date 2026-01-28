@@ -1,6 +1,8 @@
 import json
 import sys
 import os
+import boto3
+from collections import defaultdict
 from typing import Any, Dict
 
 try:
@@ -11,6 +13,14 @@ except ModuleNotFoundError:
     if project_root not in sys.path:
         sys.path.append(project_root)
     from src.db.rds_main import get_connection
+
+
+# Initialize S3 client
+s3_client = boto3.client('s3')
+
+# Environment variables
+S3_BUCKET = os.environ.get('S3_BUCKET', 'quickfix-app-files')
+PRESIGNED_URL_EXPIRATION = int(os.environ.get('PRESIGNED_URL_EXPIRATION', 3600))  # 1 hour default
 
 
 def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
@@ -25,6 +35,25 @@ def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
         },
         "body": json.dumps(body),
     }
+
+
+def generate_presigned_url(image_key: str) -> str:
+    """
+    Generate presigned URL for S3 object.
+    """
+    try:
+        url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={
+                'Bucket': S3_BUCKET,
+                'Key': image_key
+            },
+            ExpiresIn=PRESIGNED_URL_EXPIRATION
+        )
+        return url
+    except Exception as e:
+        print(f"Error generating presigned URL for {image_key}: {e}")
+        return None
 
 
 def handler(event, context):
@@ -129,6 +158,29 @@ def handler(event, context):
             cur.execute(count_query, tuple(count_params))
             total = cur.fetchone()["total"]
 
+            # 8. Fetch images for these bookings
+            booking_images_map = defaultdict(list)
+            booking_ids = [row["booking_id"] for row in rows]
+            
+            if booking_ids:
+                placeholders = ','.join(['%s'] * len(booking_ids))
+                images_query = f"""
+                    SELECT booking_id, image_key, image_order 
+                    FROM booking_images 
+                    WHERE booking_id IN ({placeholders}) 
+                    ORDER BY booking_id, image_order ASC
+                """
+                cur.execute(images_query, tuple(booking_ids))
+                image_rows = cur.fetchall()
+                
+                for img in image_rows:
+                    url = generate_presigned_url(img["image_key"])
+                    if url:
+                        booking_images_map[img["booking_id"]].append({
+                            "url": url,
+                            "order": img["image_order"]
+                        })
+
         # 8. Format bookings
         bookings = []
         for row in rows:
@@ -155,7 +207,8 @@ def handler(event, context):
                 "notes": row["notes"],
                 "created_at": row["created_at"].isoformat() if row["created_at"] else None,
                 "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
-                "completed_at": row["completed_at"].isoformat() if row["completed_at"] else None
+                "completed_at": row["completed_at"].isoformat() if row["completed_at"] else None,
+                "images": booking_images_map.get(row["booking_id"], [])
             })
 
         return _response(200, {
