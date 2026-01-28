@@ -12,4 +12,15 @@ router.get("/orders/:id", (req, res) => {
     });
 });
 
+// Mock Booking Route
+router.post("/booking", (req, res) => {
+    console.log("Mock Booking Request:", req.body);
+    // Return a fake booking ID so frontend flow works
+    res.json({
+        booking_id: 12345,
+        status: "confirmed",
+        message: "Mock booking created successfully"
+    });
+});
+
 export default router;

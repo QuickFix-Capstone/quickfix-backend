@@ -4,6 +4,8 @@ import cors from "cors";
 import stripeRoutes from "./routes/stripe.js";
 
 import ordersRoutes from "./routes/orders.js";
+import paymentsRoutes from "./routes/payments.js";
+import webhooksRoutes from "./routes/webhooks.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,6 +29,8 @@ app.use((req, res, next) => {
 
 app.use("/", stripeRoutes);
 app.use("/", ordersRoutes);
+app.use("/", paymentsRoutes);
+app.use("/", webhooksRoutes);
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

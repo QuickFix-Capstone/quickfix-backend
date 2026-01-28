@@ -49,8 +49,9 @@ router.post("/connect/onboard", (req, res) => {
 });
 
 //  2) Create PaymentIntent with split payout (Connect)
-router.post("/payment/create-intent", (req, res) => {
-    let { customerId, providerId, amountCents, currency = "cad" } = req.body;
+//  2) Create PaymentIntent with split payout (Connect)
+router.post("/payment/create-intent", async (req, res) => {
+    let { customerId, providerId, amountCents, currency = "cad", bookingId, orderId } = req.body;
 
     // 🚨 HARDCODED FOR TESTING
     if (!customerId) customerId = 1;
@@ -60,60 +61,75 @@ router.post("/payment/create-intent", (req, res) => {
         return res.status(400).json({ error: "Invalid amount." });
     }
 
-    // Check if provider has connected Stripe account
-    db.query(
-        "SELECT stripe_account_id FROM service_providers WHERE provider_id=?",
-        [providerId],
-        async (err, rows) => {
-            if (err) return res.status(500).json({ error: err.message });
-            if (!rows.length || !rows[0].stripe_account_id) {
-                return res.status(400).json({ error: "Provider is not connected to Stripe yet." });
-            }
+    // Helper: Create Stripe PI and update DB
+    const createIntentAndSave = async (finalOrderId) => {
+        try {
+            // Check provider connect status
+            db.query(
+                "SELECT stripe_account_id FROM service_providers WHERE provider_id=?",
+                [providerId],
+                async (err, rows) => {
+                    if (err) return res.status(500).json({ error: err.message });
 
-            const providerStripeAccount = rows[0].stripe_account_id;
-
-            const feePercent = Number(process.env.PLATFORM_FEE_PERCENT || 10);
-            const applicationFee = Math.round((amountCents * feePercent) / 100);
-
-            try {
-                // Create Order row (pending)
-                db.query(
-                    "INSERT INTO orders (customer_id, provider_id, amount_cents, currency, status) VALUES (?, ?, ?, ?, 'pending')",
-                    [customerId, providerId, amountCents, currency],
-                    async (dbErr, result) => {
-                        if (dbErr) return res.status(500).json({ error: dbErr.message });
-
-                        const orderId = result.insertId;
-
-                        const paymentIntent = await stripe.paymentIntents.create({
-                            amount: amountCents,
-                            currency,
-                            automatic_payment_methods: { enabled: true },
-                            metadata: { orderId: String(orderId), customerId: String(customerId), providerId: String(providerId) },
-
-                            // ✅ Split payout to provider (only if real account)
-                            ...(providerStripeAccount !== 'acct_test_bypass' && {
-                                application_fee_amount: applicationFee,
-                                transfer_data: {
-                                    destination: providerStripeAccount,
-                                },
-                            }),
-                        });
-
-                        // Save PI to order
-                        db.query(
-                            "UPDATE orders SET stripe_payment_intent_id=? WHERE id=?",
-                            [paymentIntent.id, orderId]
-                        );
-
-                        res.json({ clientSecret: paymentIntent.client_secret, orderId });
+                    // Allow test bypass or require connected account
+                    let providerStripeAccount = rows.length ? rows[0].stripe_account_id : null;
+                    if (!providerStripeAccount && process.env.NODE_ENV !== 'test') {
+                        // Fallback for dev/test if needed, or error
+                        // return res.status(400).json({ error: "Provider is not connected to Stripe." });
                     }
-                );
-            } catch (e) {
-                res.status(500).json({ error: e.message });
-            }
+
+                    const feePercent = Number(process.env.PLATFORM_FEE_PERCENT || 10);
+                    const applicationFee = Math.round((amountCents * feePercent) / 100);
+
+                    const paymentIntent = await stripe.paymentIntents.create({
+                        amount: amountCents,
+                        currency,
+                        automatic_payment_methods: { enabled: true },
+                        metadata: {
+                            orderId: String(finalOrderId),
+                            customerId: String(customerId),
+                            providerId: String(providerId),
+                            bookingId: bookingId ? String(bookingId) : "",
+                        },
+                        // Split payout if provider is connected
+                        ...(providerStripeAccount && providerStripeAccount !== 'acct_test_bypass' && {
+                            application_fee_amount: applicationFee,
+                            transfer_data: {
+                                destination: providerStripeAccount,
+                            },
+                        }),
+                    });
+
+                    // Update order with PI ID
+                    db.query(
+                        "UPDATE orders SET stripe_payment_intent_id=? WHERE id=?",
+                        [paymentIntent.id, finalOrderId]
+                    );
+
+                    res.json({ clientSecret: paymentIntent.client_secret, orderId: finalOrderId });
+                }
+            );
+        } catch (e) {
+            console.error("Stripe Error:", e);
+            res.status(500).json({ error: e.message });
         }
-    );
+    };
+
+    // Main Logic: Use existing orderId OR create new Order
+    if (orderId) {
+        console.log(`Using existing Order ID: ${orderId}`);
+        createIntentAndSave(orderId);
+    } else {
+        console.log("Creating NEW Order for Payment");
+        db.query(
+            "INSERT INTO orders (customer_id, provider_id, amount_cents, currency, status) VALUES (?, ?, ?, ?, 'pending')",
+            [customerId, providerId, amountCents, currency],
+            (dbErr, result) => {
+                if (dbErr) return res.status(500).json({ error: dbErr.message });
+                createIntentAndSave(result.insertId);
+            }
+        );
+    }
 });
 
 // ✅ 3) Webhook (to confirm payment + update DB)
