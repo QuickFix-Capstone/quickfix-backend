@@ -192,7 +192,8 @@ def handler(event, context):
         updatable_fields = {
             "pending": ["status", "notes", "scheduled_date", "scheduled_time", 
                        "service_address", "service_city", "service_state", "service_postal_code"],
-            "pending_confirmation": ["status", "notes"],
+            "pending_confirmation": ["status", "notes", "scheduled_date", "scheduled_time",
+                                    "service_address", "service_city", "service_state", "service_postal_code"],
             "confirmed": ["status", "notes", "scheduled_date", "scheduled_time"],
             "pending_reschedule": ["status", "notes", "scheduled_date", "scheduled_time"],
             "in_progress": [],
@@ -238,6 +239,10 @@ def handler(event, context):
             
             # If confirmed booking is being rescheduled, auto-change status to pending_reschedule
             if current_status == "confirmed" and "status" not in data:
+                data["status"] = "pending_reschedule"
+            
+            # Also apply to pending_confirmation
+            if current_status == "pending_confirmation" and "status" not in data:
                 data["status"] = "pending_reschedule"
 
         # 13. Build UPDATE query
