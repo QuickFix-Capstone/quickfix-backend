@@ -195,7 +195,8 @@ def handler(event, context):
             "pending_confirmation": ["status", "notes", "scheduled_date", "scheduled_time",
                                     "service_address", "service_city", "service_state", "service_postal_code"],
             "confirmed": ["status", "notes", "scheduled_date", "scheduled_time"],
-            "pending_reschedule": ["status", "notes", "scheduled_date", "scheduled_time"],
+            "pending_reschedule": ["status", "notes", "scheduled_date", "scheduled_time",
+                                      "service_address", "service_city", "service_state", "service_postal_code"],
             "in_progress": [],
             "completed": [],
             "cancelled": []
