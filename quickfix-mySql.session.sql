@@ -150,21 +150,46 @@ CREATE TABLE IF NOT EXISTS job_applications (
 DESCRIBE jobs;
 DESCRIBE job_applications;
 DESCRIBE orders;
-SELECT
-    TABLE_NAME,
+SELECT TABLE_NAME,
     COLUMN_NAME,
     CONSTRAINT_NAME,
     REFERENCED_TABLE_NAME,
     REFERENCED_COLUMN_NAME
-FROM
-    INFORMATION_SCHEMA.KEY_COLUMN_USAGE
-WHERE
-    TABLE_SCHEMA = 'quickfix'
+FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+WHERE TABLE_SCHEMA = 'quickfix'
     AND TABLE_NAME = 'orders'
     AND REFERENCED_TABLE_NAME IS NOT NULL;
-
 -- ============================================
 -- Delete service provider by email
 -- ============================================
 DELETE FROM service_providers
 WHERE email = 'ykphrfly@gmail.com';
+-- ============================================
+-- Migration: Add job_images table
+-- Date: 2026-01-30
+-- Description: Allows customers to upload 3-5 images per job posting
+-- ============================================
+USE quickfix;
+CREATE TABLE IF NOT EXISTS job_images (
+    image_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    job_id BIGINT NOT NULL,
+    image_key VARCHAR(512) NOT NULL COMMENT 'S3 key (e.g., job-images/123/photo.jpg)',
+    image_order TINYINT NOT NULL DEFAULT 1 COMMENT 'Display order (1-5)',
+    content_type VARCHAR(50) NOT NULL COMMENT 'MIME type (e.g., image/jpeg)',
+    file_size INT NULL COMMENT 'File size in bytes',
+    description VARCHAR(255) NULL COMMENT 'Optional image description',
+    uploaded_by_id BIGINT NOT NULL COMMENT 'Customer ID who uploaded',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_job_image_job FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE,
+    CONSTRAINT fk_job_image_customer FOREIGN KEY (uploaded_by_id) REFERENCES customers(customer_id) ON DELETE CASCADE,
+    INDEX idx_job_id (job_id),
+    INDEX idx_uploaded_by_id (uploaded_by_id),
+    INDEX idx_image_order (job_id, image_order),
+    CONSTRAINT chk_job_image_order CHECK (
+        image_order BETWEEN 1 AND 5
+    ),
+    UNIQUE KEY unique_job_order (job_id, image_order)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+-- Verify the table
+DESCRIBE job_images;
