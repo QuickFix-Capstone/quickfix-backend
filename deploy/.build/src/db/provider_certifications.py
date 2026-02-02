@@ -2,10 +2,15 @@
 
 import os
 import pymysql
-from dotenv import load_dotenv
 from typing import Optional, Dict, Any
 
-load_dotenv()
+# Load environment variables from .env file (only for local development)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # dotenv not available (e.g., in Lambda), use environment variables directly
+    pass
 
 
 MYSQL_HOST = os.getenv("MYSQL_HOST")

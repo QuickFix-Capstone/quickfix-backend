@@ -93,7 +93,7 @@ def handler(event, context):
                     j.preferred_date, j.preferred_time, j.budget_min, j.budget_max,
                     j.status, j.assigned_provider_id, j.created_at, j.updated_at,
                     sp.name as provider_name,
-                    sp.rating as provider_rating,
+                    sp.average_rating as provider_average_rating,
                     sp.phone_number as provider_phone,
                     COUNT(ja.application_id) as application_count
                 FROM jobs j
@@ -142,7 +142,7 @@ def handler(event, context):
             job["assigned_provider"] = {
                 "provider_id": job_row["assigned_provider_id"],
                 "name": job_row["provider_name"],
-                "rating": float(job_row["provider_rating"]) if job_row["provider_rating"] else None,
+                "rating": float(job_row["provider_average_rating"]) if job_row["provider_average_rating"] else None,
                 "phone": job_row["provider_phone"]
             }
         else:
