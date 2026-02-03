@@ -86,25 +86,25 @@ MODIFY COLUMN status ENUM(
 CREATE TABLE job_price_change_requests (
     request_id BIGINT AUTO_INCREMENT PRIMARY KEY,
     job_id BIGINT NOT NULL,
-    requested_by_provider_id BIGINT NOT NULL,
+    requested_by_provider_id VARCHAR(40) NOT NULL,
     proposed_final_price DECIMAL(10, 2) NOT NULL,
     reason TEXT NOT NULL,
     status ENUM('pending', 'accepted', 'rejected', 'cancelled') NOT NULL DEFAULT 'pending',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     responded_at TIMESTAMP NULL,
-    
+
     -- Foreign keys
-    CONSTRAINT fk_price_request_job 
+    CONSTRAINT fk_price_request_job
         FOREIGN KEY (job_id) REFERENCES jobs(job_id) ON DELETE CASCADE,
-    CONSTRAINT fk_price_request_provider 
+    CONSTRAINT fk_price_request_provider
         FOREIGN KEY (requested_by_provider_id) REFERENCES service_providers(provider_id) ON DELETE CASCADE,
-    
+
     -- Indexes for performance
     INDEX idx_job_id (job_id),
     INDEX idx_job_status (job_id, status),  -- Fast "pending check"
     INDEX idx_provider_id (requested_by_provider_id),
     INDEX idx_created_at (created_at)
-    
+
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
