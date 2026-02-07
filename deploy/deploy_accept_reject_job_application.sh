@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-FUNCTION_NAME="update_application_status"
-LAMBDA_DIR="lambda/jobs/update_application_status"
+FUNCTION_NAME="accept_reject_job_application"
+LAMBDA_DIR="lambda/jobs/accept_reject_job_application"
 BUILD_DIR="deploy/.build/${FUNCTION_NAME}"
 
 echo "📦 Building ${FUNCTION_NAME} Lambda package..."

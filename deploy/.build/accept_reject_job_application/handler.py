@@ -345,7 +345,7 @@ if __name__ == "__main__":
         })
     }
 
-    print("🔍 Running local test for update_application_status.handler() - ACCEPT...")
+    print("🔍 Running local test for accept_reject_job_application.handler() - ACCEPT...")
     result = handler(test_event_accept, None)
     print("Response:")
     print(json.dumps(result, indent=2))
