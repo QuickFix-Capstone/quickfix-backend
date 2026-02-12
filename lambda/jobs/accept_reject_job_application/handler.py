@@ -248,6 +248,30 @@ def handler(event, context):
                 conn.commit()
                 message = "Application rejected successfully"
 
+                # Notify provider that their application was rejected.
+                provider_sub = None
+                cur.execute(
+                    "SELECT cognito_sub FROM service_providers WHERE provider_id = %s",
+                    (app_row["provider_id"],)
+                )
+                provider_row = cur.fetchone()
+                if provider_row:
+                    provider_sub = provider_row["cognito_sub"]
+
+                if provider_sub:
+                    try:
+                        reject_payload = {
+                            "type": "APPLICATION_STATUS_CHANGED",
+                            "applicationId": str(application_id),
+                            "jobId": str(job_id),
+                            "newStatus": "rejected",
+                            "changedAt": datetime.now(timezone.utc).isoformat(),
+                            "changedBy": cognito_sub,
+                        }
+                        NotificationService().notify_users([provider_sub], reject_payload)
+                    except Exception as exc:
+                        print(f"Failed to send rejection notification: {exc}")
+
             # 11. Fetch updated application
             cur.execute(
                 """

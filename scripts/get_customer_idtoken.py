@@ -15,7 +15,7 @@ CLIENT_ID = "p2u5qdegml3hp60n6ohu52n2b"
 REGION = "us-east-2"
 
 # Customer Credentials
-EMAIL = "ykphrfly@gmail.com"
+EMAIL = "ykphrfly@yahoo.com"
 PASSWORD = "Yang@860101"
 
 
