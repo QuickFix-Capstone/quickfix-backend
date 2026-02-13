@@ -19,7 +19,6 @@ MAX_MESSAGE_LENGTH = 1000
 
 
 def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
-    """Standard API Gateway response."""
     return {
         "statusCode": status_code,
         "headers": {
@@ -33,7 +32,6 @@ def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
-    """Parse request body from API Gateway event."""
     if "body" not in event:
         return {}
 
@@ -50,46 +48,6 @@ def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
             raise ValueError("Invalid JSON body")
 
     raise ValueError("Unsupported body format")
-
-
-def _parse_updates(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Validate and return updatable fields."""
-    if not isinstance(data, dict):
-        raise ValueError("Request body must be a JSON object")
-
-    unknown_fields = sorted(set(data.keys()) - ALLOWED_FIELDS)
-    if unknown_fields:
-        raise ValueError(f"Unsupported fields: {', '.join(unknown_fields)}")
-
-    updates: Dict[str, Any] = {}
-
-    if "proposed_price" in data:
-        raw_price = data.get("proposed_price")
-        try:
-            proposed_price = Decimal(str(raw_price))
-        except (InvalidOperation, TypeError, ValueError):
-            raise ValueError("proposed_price must be a number greater than 0")
-
-        if proposed_price <= 0:
-            raise ValueError("proposed_price must be greater than 0")
-
-        updates["proposed_price"] = proposed_price
-
-    if "message" in data:
-        raw_message = data.get("message")
-        if not isinstance(raw_message, str):
-            raise ValueError("message must be a non-empty string")
-        message = raw_message.strip()
-        if not message:
-            raise ValueError("message must be a non-empty string")
-        if len(message) > MAX_MESSAGE_LENGTH:
-            raise ValueError(f"message must be {MAX_MESSAGE_LENGTH} characters or fewer")
-        updates["message"] = message
-
-    if not updates:
-        raise ValueError("No valid fields to update. Provide proposed_price and/or message")
-
-    return updates
 
 
 def _parse_path_ids(event: Dict[str, Any]) -> Dict[str, int]:
@@ -111,20 +69,52 @@ def _parse_path_ids(event: Dict[str, Any]) -> Dict[str, int]:
     return {"job_id": job_id, "application_id": application_id}
 
 
+def _parse_updates(data: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(data, dict):
+        raise ValueError("Request body must be a JSON object")
+
+    unknown_fields = sorted(set(data.keys()) - ALLOWED_FIELDS)
+    if unknown_fields:
+        raise ValueError(f"Unsupported fields: {', '.join(unknown_fields)}")
+
+    updates: Dict[str, Any] = {}
+
+    if "proposed_price" in data:
+        raw_price = data.get("proposed_price")
+        try:
+            price = Decimal(str(raw_price))
+        except (InvalidOperation, TypeError, ValueError):
+            raise ValueError("proposed_price must be a number greater than 0")
+
+        if price <= 0:
+            raise ValueError("proposed_price must be greater than 0")
+
+        updates["proposed_price"] = price
+
+    if "message" in data:
+        raw_message = data.get("message")
+        if not isinstance(raw_message, str):
+            raise ValueError("message must be a non-empty string")
+        message = raw_message.strip()
+        if not message:
+            raise ValueError("message must be a non-empty string")
+        if len(message) > MAX_MESSAGE_LENGTH:
+            raise ValueError(f"message must be {MAX_MESSAGE_LENGTH} characters or fewer")
+        updates["message"] = message
+
+    if not updates:
+        raise ValueError("No valid fields to update. Provide proposed_price and/or message")
+
+    return updates
+
+
 def handler(event, context):
     """
-    Update a provider's own pending job application.
+    Customer edits a pending application on their own job.
 
     Endpoint:
-    - PUT /job/{job_id}/applications/{application_id}/update
-
-    Rules:
-    - Provider must be authenticated
-    - Provider can only update their own application
-    - Only pending applications can be updated
-    - Job must be open
+    - PATCH /job/{job_id}/applications/{application_id}
     """
-    # 1. Extract Cognito JWT claims
     try:
         claims = event["requestContext"]["authorizer"]["jwt"]["claims"]
         cognito_sub = claims.get("sub")
@@ -134,7 +124,6 @@ def handler(event, context):
     if not cognito_sub:
         return _response(401, {"message": "Unauthorized: Missing cognito_sub"})
 
-    # 2. Extract path parameters
     try:
         parsed_ids = _parse_path_ids(event)
         job_id = parsed_ids["job_id"]
@@ -142,46 +131,42 @@ def handler(event, context):
     except ValueError as exc:
         return _response(400, {"message": str(exc)})
 
-    # 3. Parse body
     try:
         data = _parse_body(event)
         updates = _parse_updates(data)
     except ValueError as exc:
         return _response(400, {"message": str(exc)})
 
-    # 4. Connect to DB
     conn = get_connection()
     if not conn:
         return _response(500, {"message": "Database connection failed"})
 
     try:
         with conn.cursor() as cur:
-            # 5. Resolve provider from JWT
             cur.execute(
-                "SELECT provider_id FROM service_providers WHERE cognito_sub = %s",
+                "SELECT customer_id FROM customers WHERE cognito_sub = %s",
                 (cognito_sub,),
             )
-            provider_row = cur.fetchone()
-            if not provider_row:
-                return _response(404, {"message": "Provider profile not found"})
-            provider_id = provider_row["provider_id"]
+            customer_row = cur.fetchone()
+            if not customer_row:
+                return _response(404, {"message": "Customer profile not found"})
+            customer_id = customer_row["customer_id"]
 
-            # 6. Verify job exists and is open
             cur.execute(
-                "SELECT job_id, status FROM jobs WHERE job_id = %s",
+                "SELECT job_id, customer_id, status FROM jobs WHERE job_id = %s",
                 (job_id,),
             )
             job_row = cur.fetchone()
             if not job_row:
                 return _response(404, {"message": "Job not found"})
-
+            if job_row["customer_id"] != customer_id:
+                return _response(403, {"message": "Forbidden: You can only edit applications for your own jobs"})
             if job_row["status"] != "open":
-                return _response(409, {"message": "Job is not open. Applications can only be updated for open jobs"})
+                return _response(409, {"message": "Job is not open. Pending applications are editable only while job is open"})
 
-            # 7. Verify application exists for this job
             cur.execute(
                 """
-                SELECT application_id, job_id, provider_id, proposed_price, message, status, created_at
+                SELECT application_id, job_id, provider_id, proposed_price, message, status, created_at, updated_at, customer_last_edited_at
                 FROM job_applications
                 WHERE application_id = %s AND job_id = %s
                 """,
@@ -190,32 +175,26 @@ def handler(event, context):
             app_row = cur.fetchone()
             if not app_row:
                 return _response(404, {"message": "Application not found"})
-
-            # 8. Provider ownership check
-            if app_row["provider_id"] != provider_id:
-                return _response(403, {"message": "Forbidden: You can only update your own application"})
-
-            # 9. Status check
             if app_row["status"] != "pending":
-                return _response(409, {"message": f"Application is {app_row['status']}. Only pending applications can be updated"})
+                return _response(409, {"message": f"Application is {app_row['status']}. Only pending applications can be edited"})
 
-            # 10. Build dynamic update query
-            set_sql = ", ".join([f"{field} = %s" for field in updates.keys()])
-            params = list(updates.values()) + [application_id, job_id]
+            set_fields = [f"{field} = %s" for field in updates.keys()]
+            params = list(updates.values())
+            set_fields.append("customer_last_edited_at = CURRENT_TIMESTAMP")
+
             cur.execute(
                 f"""
                 UPDATE job_applications
-                SET {set_sql}
+                SET {", ".join(set_fields)}
                 WHERE application_id = %s AND job_id = %s
                 """,
-                params,
+                params + [application_id, job_id],
             )
             conn.commit()
 
-            # 11. Fetch updated row
             cur.execute(
                 """
-                SELECT application_id, job_id, provider_id, proposed_price, message, status, created_at
+                SELECT application_id, job_id, provider_id, proposed_price, message, status, created_at, updated_at, customer_last_edited_at
                 FROM job_applications
                 WHERE application_id = %s AND job_id = %s
                 """,
@@ -223,7 +202,6 @@ def handler(event, context):
             )
             updated_row = cur.fetchone()
 
-        # 12. Format response
         return _response(
             200,
             {
@@ -236,12 +214,14 @@ def handler(event, context):
                     "message": updated_row["message"],
                     "status": updated_row["status"],
                     "created_at": updated_row["created_at"].isoformat() if updated_row["created_at"] else None,
+                    "updated_at": updated_row["updated_at"].isoformat() if updated_row.get("updated_at") else None,
+                    "customer_last_edited_at": updated_row["customer_last_edited_at"].isoformat() if updated_row.get("customer_last_edited_at") else None,
                 },
             },
         )
 
     except Exception as exc:
-        print(f"Error updating job application: {exc}")
+        print(f"Error updating application by customer: {exc}")
         return _response(500, {"message": "Internal server error"})
     finally:
         try:

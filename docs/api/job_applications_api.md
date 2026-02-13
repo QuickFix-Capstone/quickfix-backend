@@ -171,6 +171,79 @@ fetch('https://kfvf20j7j9.execute-api.us-east-2.amazonaws.com/prod/job/1/applica
 
 ---
 
+### 3. Edit Pending Application (Customer)
+
+Customer can edit `proposed_price` and/or `message` on a pending application for their own job.
+
+**Endpoint**: `PATCH /job/{job_id}/applications/{application_id}`
+
+**Authentication**: Customer JWT (must own the job)
+
+**Path Parameters**:
+- `job_id` (required): ID of the job
+- `application_id` (required): ID of the application
+
+**Request Body**:
+```json
+{
+  "proposed_price": 199.99,
+  "message": "Can you confirm material costs are included?"
+}
+```
+
+`proposed_price` and `message` are both optional, but at least one must be provided.
+
+**Success Response (200 OK)**:
+```json
+{
+  "message": "Application updated successfully",
+  "application": {
+    "application_id": 1,
+    "job_id": 1,
+    "provider_id": "SP-001",
+    "proposed_price": 199.99,
+    "message": "Can you confirm material costs are included?",
+    "status": "pending",
+    "created_at": "2026-01-04T00:50:25",
+    "updated_at": "2026-02-13T12:01:00",
+    "customer_last_edited_at": "2026-02-13T12:01:00"
+  }
+}
+```
+
+**Error Responses**:
+- `400 Bad Request`: Invalid body/path or unsupported fields
+- `401 Unauthorized`: Missing or invalid JWT token
+- `403 Forbidden`: Customer doesn't own this job
+- `404 Not Found`: Job or application doesn't exist
+- `409 Conflict`: Job not open or application not pending
+
+---
+
+### 4. Update Own Pending Application (Provider)
+
+Provider can update their own pending application.
+
+**Endpoint**: `PUT /job/{job_id}/applications/{application_id}/update`
+
+**Authentication**: Provider JWT
+
+**Body**:
+```json
+{
+  "proposed_price": 175.00,
+  "message": "Updated with revised labor estimate"
+}
+```
+
+Validation hardening:
+- `job_id` and `application_id` must be positive integers
+- Rejects unsupported fields
+- `message` max length: 1000
+- Only pending applications on open jobs are editable
+
+---
+
 ## React/Frontend Integration Examples
 
 ### Fetch Job Applications
