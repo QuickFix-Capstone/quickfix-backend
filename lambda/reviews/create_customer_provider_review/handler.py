@@ -50,8 +50,18 @@ def _validate_review_data(data: Dict[str, Any]) -> tuple[bool, str]:
     Returns:
         tuple: (is_valid, error_message)
     """
+    # Must have either job_id OR booking_id (not both, not neither)
+    has_job_id = "job_id" in data and data["job_id"] is not None
+    has_booking_id = "booking_id" in data and data["booking_id"] is not None
+    
+    if not has_job_id and not has_booking_id:
+        return False, "Either job_id or booking_id is required"
+    
+    if has_job_id and has_booking_id:
+        return False, "Cannot specify both job_id and booking_id"
+    
     # Required fields for customer_provider_reviews
-    required_fields = ["job_id", "provider_id", "rating", "comment"]
+    required_fields = ["provider_id", "rating", "comment"]
     missing = [f for f in required_fields if f not in data]
 
     if missing:
@@ -84,7 +94,8 @@ def handler(event, context):
     Expected JSON input (in event["body"] when via API Gateway):
 
     {
-      "job_id": 123,
+      "job_id": 123,  // OR booking_id (not both)
+      "booking_id": 456,  // OR job_id (not both)
       "provider_id": 5,
       "rating": 5,
       "comment": "Excellent service! Very professional and completed the job on time."
@@ -96,9 +107,9 @@ def handler(event, context):
         201: Review created successfully
         400: Invalid input data
         401: Unauthorized (missing/invalid JWT)
-        403: Customer not found for email
-        404: Job not found
-        409: Duplicate review (customer already reviewed this job)
+        403: Customer not found for email or not authorized
+        404: Job/Booking not found
+        409: Duplicate review (customer already reviewed this job/booking)
         500: Internal server error
     """
     # 1) Parse and validate input
@@ -114,6 +125,7 @@ def handler(event, context):
 
     # 3) Extract customer_id from JWT or local testing
     customer_id = data.get("customer_id")  # For local testing
+    email = None
 
     if not customer_id:
         # Try to get from requestContext (API Gateway JWT authorizer)
@@ -135,7 +147,7 @@ def handler(event, context):
     try:
         with conn.cursor() as cur:
             # 5) If customer_id not set (JWT flow), look up by email
-            if not customer_id and 'email' in locals():
+            if not customer_id and email:
                 cur.execute(
                     "SELECT customer_id FROM customers WHERE email = %s",
                     (email,)
@@ -145,39 +157,83 @@ def handler(event, context):
                     return _response(403, {"message": "Customer not found for this email"})
                 customer_id = customer_result['customer_id']
 
-            # 6) Check if job exists and is completed
-            cur.execute(
-                "SELECT status, customer_id, assigned_provider_id FROM jobs WHERE job_id = %s",
-                (data["job_id"],)
-            )
-            job = cur.fetchone()
-
-            if not job:
-                return _response(404, {"message": "Job not found"})
-
-            if job["status"] != "completed":
-                return _response(
-                    400,
-                    {"message": "Job must be completed before submitting a review"}
+            # 6) Check if job or booking exists and is completed
+            job_id = data.get("job_id")
+            booking_id = data.get("booking_id")
+            
+            if job_id:
+                # Job-based review
+                cur.execute(
+                    "SELECT status, customer_id, assigned_provider_id FROM jobs WHERE job_id = %s",
+                    (job_id,)
                 )
+                record = cur.fetchone()
 
-            # 7) Verify customer owns this job
-            if job["customer_id"] != customer_id:
-                return _response(
-                    403,
-                    {"message": "You can only review jobs that you created"}
+                if not record:
+                    return _response(404, {"message": "Job not found"})
+
+                if record["status"] != "completed":
+                    return _response(
+                        400,
+                        {"message": "Job must be completed before submitting a review"}
+                    )
+
+                # Verify customer owns this job
+                if record["customer_id"] != customer_id:
+                    return _response(
+                        403,
+                        {"message": "You can only review jobs that you created"}
+                    )
+                
+                # Verify provider matches
+                if record["assigned_provider_id"] != data["provider_id"]:
+                    return _response(
+                        400,
+                        {"message": "Provider ID does not match the assigned provider for this job"}
+                    )
+                
+            else:
+                # Booking-based review
+                cur.execute(
+                    "SELECT status, customer_id, provider_id FROM bookings WHERE booking_id = %s",
+                    (booking_id,)
                 )
+                record = cur.fetchone()
+
+                if not record:
+                    return _response(404, {"message": "Booking not found"})
+
+                if record["status"] != "completed":
+                    return _response(
+                        400,
+                        {"message": "Booking must be completed before submitting a review"}
+                    )
+
+                # Verify customer owns this booking
+                if record["customer_id"] != customer_id:
+                    return _response(
+                        403,
+                        {"message": "You can only review bookings that you created"}
+                    )
+                
+                # Verify provider matches
+                if record["provider_id"] != data["provider_id"]:
+                    return _response(
+                        400,
+                        {"message": "Provider ID does not match the assigned provider for this booking"}
+                    )
 
             # 8) Insert the review into customer_provider_reviews
             sql = """
                 INSERT INTO customer_provider_reviews
-                (job_id, customer_id, provider_id, rating, comment)
-                VALUES (%s, %s, %s, %s, %s)
+                (job_id, booking_id, customer_id, provider_id, rating, comment)
+                VALUES (%s, %s, %s, %s, %s, %s)
             """
             cur.execute(
                 sql,
                 (
-                    data["job_id"],
+                    job_id,
+                    booking_id,
                     customer_id,
                     data["provider_id"],
                     data["rating"],
@@ -201,7 +257,8 @@ def handler(event, context):
                 "message": "Review created successfully",
                 "review": {
                     "review_id": review["review_id"],
-                    "job_id": review["job_id"],
+                    "job_id": review.get("job_id"),
+                    "booking_id": review.get("booking_id"),
                     "customer_id": review["customer_id"],
                     "provider_id": review["provider_id"],
                     "rating": review["rating"],
@@ -217,13 +274,13 @@ def handler(event, context):
         if "unique_customer_job" in error_str.lower() or "duplicate" in error_str.lower():
             return _response(
                 409,
-                {"message": "You have already submitted a review for this job"},
+                {"message": "You have already submitted a review for this job or booking"},
             )
         # Foreign key constraint violation
         if "foreign key" in error_str.lower():
             return _response(
                 400,
-                {"message": "Invalid job_id, customer_id, or provider_id"},
+                {"message": "Invalid job_id, booking_id, customer_id, or provider_id"},
             )
         # Other integrity errors
         return _response(
@@ -248,8 +305,8 @@ def handler(event, context):
 
 # Optional: local test helper
 if __name__ == "__main__":
-    # Simulate creating a review by customer for provider
-    test_event = {
+    # Test 1: Simulate creating a review by customer for provider (job-based)
+    test_event_job = {
         "body": json.dumps(
             {
                 "job_id": 1,
@@ -261,8 +318,29 @@ if __name__ == "__main__":
         )
     }
 
-    print("Running local test for create_review.handler() (customer reviews provider)...")
-    result = handler(test_event, None)
+    print("Running local test for create_review.handler() (customer reviews provider - JOB)...")
+    result = handler(test_event_job, None)
+    print("Response:")
+    print(json.dumps(json.loads(result["body"]), indent=2))
+    print(f"Status Code: {result['statusCode']}")
+    
+    print("\n" + "="*80 + "\n")
+    
+    # Test 2: Simulate creating a review by customer for provider (booking-based)
+    test_event_booking = {
+        "body": json.dumps(
+            {
+                "booking_id": 1,
+                "customer_id": 1,  # For local testing - in production this comes from JWT
+                "provider_id": 1,
+                "rating": 4,
+                "comment": "Great work on the booking. Very satisfied with the service provided.",
+            }
+        )
+    }
+
+    print("Running local test for create_review.handler() (customer reviews provider - BOOKING)...")
+    result = handler(test_event_booking, None)
     print("Response:")
     print(json.dumps(json.loads(result["body"]), indent=2))
     print(f"Status Code: {result['statusCode']}")
