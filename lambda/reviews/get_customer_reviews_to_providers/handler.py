@@ -158,7 +158,7 @@ def handler(event, context):
                     sp.business_name as provider_name,
                     sp.average_rating as provider_rating
                 FROM customer_provider_reviews r
-                LEFT JOIN service_providers sp ON r.provider_id = sp.provider_id
+                LEFT JOIN service_providers sp ON CAST(r.provider_id AS CHAR) = CAST(sp.provider_id AS CHAR)
                 WHERE r.customer_id = %s
                 ORDER BY {sort_clause}
                 LIMIT %s OFFSET %s
