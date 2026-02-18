@@ -2,10 +2,10 @@
 -- Description: Cache aggregated statistics for customer profiles to optimize performance
 -- Date: 2026-02-17
 -- Phase: Customer Public Profile - Phase 1.2
+-- Note: avg_rating is NOT included as customers table already has average_rating column
 
 CREATE TABLE IF NOT EXISTS customer_profile_stats (
     customer_id BIGINT PRIMARY KEY,
-    avg_rating DECIMAL(3,2) NULL COMMENT 'Average rating from provider reviews',
     review_count INT NOT NULL DEFAULT 0,
     jobs_posted_6mo INT NOT NULL DEFAULT 0,
     jobs_completed INT NOT NULL DEFAULT 0,
@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS customer_profile_stats (
     INDEX idx_last_updated (last_updated)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Cached customer profile statistics for performance optimization';
+
+-- Note: For customer ratings, use customers.average_rating column
+-- The customers table already has: average_rating, total_rating_points, total_review_count
 
 -- Verification query
 SELECT 

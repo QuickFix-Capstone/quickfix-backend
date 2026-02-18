@@ -32,7 +32,7 @@ For performance optimization, cache aggregated statistics:
 ```sql
 CREATE TABLE customer_profile_stats (
     customer_id BIGINT PRIMARY KEY,
-    avg_rating DECIMAL(3,2) NULL COMMENT 'Average rating from provider reviews',
+    -- Note: avg_rating is NOT included here as customers table already has average_rating
     review_count INT NOT NULL DEFAULT 0,
     jobs_posted_6mo INT NOT NULL DEFAULT 0,
     jobs_completed INT NOT NULL DEFAULT 0,
@@ -48,6 +48,8 @@ CREATE TABLE customer_profile_stats (
     INDEX idx_last_updated (last_updated)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
+
+**Note**: The `customers` table already has `average_rating`, `total_rating_points`, and `total_review_count` columns, so we don't duplicate that data here.
 
 ### 1.3 Add Review Visibility Flag
 
@@ -159,9 +161,9 @@ async function calculateCustomerStats(customerId, connection) {
     try {
         const [stats] = await connection.query(`
             SELECT 
-                -- Review stats
-                COALESCE(AVG(r.rating), 0) as avg_rating,
-                COUNT(DISTINCT r.review_id) as review_count,
+                -- Get rating from customers table (already calculated there)
+                c.average_rating,
+                c.total_review_count as review_count,
                 
                 -- Job stats (last 6 months)
                 COUNT(DISTINCT CASE 
@@ -193,10 +195,9 @@ async function calculateCustomerStats(customerId, connection) {
                 END as cancellation_rate
                 
             FROM customers c
-            LEFT JOIN reviews r ON c.customer_id = r.customer_id AND r.is_visible = TRUE
             LEFT JOIN jobs j ON c.customer_id = j.customer_id
             WHERE c.customer_id = ?
-            GROUP BY c.customer_id
+            GROUP BY c.customer_id, c.average_rating, c.total_review_count
         `, [customerId]);
         
         return stats[0] || null;
@@ -214,11 +215,10 @@ async function upsertStats(customerId, stats, connection) {
     
     await connection.query(`
         INSERT INTO customer_profile_stats 
-        (customer_id, avg_rating, review_count, jobs_posted_6mo, jobs_completed, 
+        (customer_id, review_count, jobs_posted_6mo, jobs_completed, 
          jobs_cancelled, completion_rate, cancellation_rate)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
-            avg_rating = VALUES(avg_rating),
             review_count = VALUES(review_count),
             jobs_posted_6mo = VALUES(jobs_posted_6mo),
             jobs_completed = VALUES(jobs_completed),
@@ -228,7 +228,6 @@ async function upsertStats(customerId, stats, connection) {
             last_updated = CURRENT_TIMESTAMP
     `, [
         customerId,
-        stats.avg_rating,
         stats.review_count,
         stats.jobs_posted_6mo,
         stats.jobs_completed,
@@ -320,6 +319,18 @@ exports.handler = async (event) => {
             stats = [freshStats];
         }
         
+        // Get avg_rating from customers table (not in stats table)
+        const [customerRating] = await connection.query(
+            'SELECT average_rating FROM customers WHERE customer_id = ?',
+            [customerId]
+        );
+        
+        // Merge rating with stats
+        const fullStats = {
+            ...stats[0],
+            avg_rating: customerRating[0]?.average_rating || 0
+        };
+        
         // 4. Get recent reviews (limited to 5)
         const [reviews] = await connection.query(`
             SELECT 
@@ -362,7 +373,7 @@ exports.handler = async (event) => {
                     member_since: customer[0].created_at,
                     is_new: isNewCustomer(customer[0].created_at)
                 },
-                stats: stats[0] || {},
+                stats: fullStats || {},
                 recent_reviews: reviews,
                 job_categories: categories,
                 badges
