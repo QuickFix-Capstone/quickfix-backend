@@ -6,12 +6,14 @@ from typing import Any, Dict
 
 try:
     from src.db.rds_main import get_connection
+    from src.utils.customer_public_profile import track_provider_interaction
 except ModuleNotFoundError:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, "../../.."))
     if project_root not in sys.path:
         sys.path.append(project_root)
     from src.db.rds_main import get_connection
+    from src.utils.customer_public_profile import track_provider_interaction
 
 
 ALLOWED_FIELDS = {"proposed_price", "message"}
@@ -168,7 +170,7 @@ def handler(event, context):
 
             # 6. Verify job exists and is open
             cur.execute(
-                "SELECT job_id, status FROM jobs WHERE job_id = %s",
+                "SELECT job_id, customer_id, status FROM jobs WHERE job_id = %s",
                 (job_id,),
             )
             job_row = cur.fetchone()
@@ -194,6 +196,14 @@ def handler(event, context):
             # 8. Provider ownership check
             if app_row["provider_id"] != provider_id:
                 return _response(403, {"message": "Forbidden: You can only update your own application"})
+
+            track_provider_interaction(
+                conn=conn,
+                provider_id=provider_id,
+                customer_id=job_row["customer_id"],
+                interaction_type="job_application",
+                job_id=job_id,
+            )
 
             # 9. Status check
             if app_row["status"] != "pending":

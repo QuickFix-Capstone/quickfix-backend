@@ -6,12 +6,14 @@ from typing import Any, Dict
 
 try:
     from src.db.rds_main import get_connection
+    from src.utils.customer_public_profile import track_provider_interaction
 except ModuleNotFoundError:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, "../../.."))
     if project_root not in sys.path:
         sys.path.append(project_root)
     from src.db.rds_main import get_connection
+    from src.utils.customer_public_profile import track_provider_interaction
 
 import boto3
 
@@ -144,10 +146,27 @@ def handler(event, context):
         
         conversation = conv_response['Item']
         other_user_id = conversation.get('otherUserId')
-        
+
     except Exception as e:
         print(f"DynamoDB error checking conversation: {e}")
         return _response(500, {"message": "Failed to verify conversation"})
+
+    if user_type == "provider":
+        try:
+            customer_id = int(str(other_user_id))
+            track_conn = get_connection()
+            if track_conn:
+                try:
+                    track_provider_interaction(
+                        conn=track_conn,
+                        provider_id=user_id,
+                        customer_id=customer_id,
+                        interaction_type="message",
+                    )
+                finally:
+                    track_conn.close()
+        except Exception:
+            pass
 
     # 6. Create message
     timestamp = int(time.time() * 1000)
