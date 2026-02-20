@@ -9,6 +9,7 @@ try:
     from src.db.rds_main import get_connection
     from src.email.ses_service import send_booking_confirmation_email
     from src.utils.booking_utils import generate_confirmation_token
+    from src.utils.customer_public_profile import track_provider_interaction
 except ModuleNotFoundError:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, "../../.."))
@@ -17,6 +18,7 @@ except ModuleNotFoundError:
     from src.db.rds_main import get_connection
     from src.email.ses_service import send_booking_confirmation_email
     from src.utils.booking_utils import generate_confirmation_token
+    from src.utils.customer_public_profile import track_provider_interaction
 
 
 def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -190,6 +192,13 @@ def handler(event, context):
             
             conn.commit()
             booking_id = cur.lastrowid
+            track_provider_interaction(
+                conn=conn,
+                provider_id=data["provider_id"],
+                customer_id=customer_id,
+                interaction_type="booking",
+                booking_id=booking_id,
+            )
 
             # 9. Generate confirmation token
             confirmation_token = generate_confirmation_token(booking_id, data["provider_id"])

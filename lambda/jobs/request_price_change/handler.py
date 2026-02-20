@@ -6,12 +6,14 @@ from decimal import Decimal
 
 try:
     from src.db.rds_main import get_connection
+    from src.utils.customer_public_profile import track_provider_interaction
 except ModuleNotFoundError:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, "../../.."))
     if project_root not in sys.path:
         sys.path.append(project_root)
     from src.db.rds_main import get_connection
+    from src.utils.customer_public_profile import track_provider_interaction
 
 
 def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -172,6 +174,13 @@ def handler(event, context):
             # 10. Validate job is assigned to this provider (BR-BUD-02 implicit)
             if job_row["assigned_provider_id"] != provider_id:
                 return _response(403, {"message": "Forbidden: This job is not assigned to you"})
+            track_provider_interaction(
+                conn=conn,
+                provider_id=provider_id,
+                customer_id=job_row["customer_id"],
+                interaction_type="job_view",
+                job_id=int(job_id),
+            )
 
             # 11. Check for existing pending request FIRST (BR-BUD-03) - provides clearer error message
             cur.execute(

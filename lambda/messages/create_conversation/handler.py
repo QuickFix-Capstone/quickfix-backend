@@ -7,12 +7,14 @@ from typing import Any, Dict
 
 try:
     from src.db.rds_main import get_connection
+    from src.utils.customer_public_profile import track_provider_interaction
 except ModuleNotFoundError:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, "../../.."))
     if project_root not in sys.path:
         sys.path.append(project_root)
     from src.db.rds_main import get_connection
+    from src.utils.customer_public_profile import track_provider_interaction
 
 import boto3
 
@@ -250,6 +252,33 @@ def handler(event, context):
         return _response(500, {"message": "Failed to create conversation"})
 
     # 7. Return success response
+    try:
+        provider_id_for_tracking = None
+        customer_id_for_tracking = None
+
+        if current_user_type == "provider" and other_user_type == "customer":
+            provider_id_for_tracking = user_id
+            customer_id_for_tracking = int(str(other_user_id))
+        elif current_user_type == "customer" and other_user_type == "provider":
+            provider_id_for_tracking = other_user_id
+            customer_id_for_tracking = int(str(user_id))
+
+        if provider_id_for_tracking and customer_id_for_tracking:
+            track_conn = get_connection()
+            if track_conn:
+                try:
+                    track_provider_interaction(
+                        conn=track_conn,
+                        provider_id=provider_id_for_tracking,
+                        customer_id=customer_id_for_tracking,
+                        interaction_type="message",
+                        job_id=int(job_id) if job_id else None,
+                    )
+                finally:
+                    track_conn.close()
+    except Exception:
+        pass
+
     return _response(201, {
         "conversationId": conversation_id,
         "otherUser": {

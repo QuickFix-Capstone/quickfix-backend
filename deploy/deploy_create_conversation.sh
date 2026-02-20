@@ -2,8 +2,8 @@
 set -e
 
 FUNCTION_NAME="create_conversation"
-LAMBDA_DIR="lambda/messages/create_conversation"
-BUILD_DIR="deploy/.build/${FUNCTION_NAME}"
+LAMBDA_DIR="../lambda/messages/create_conversation"
+BUILD_DIR=".build/${FUNCTION_NAME}"
 
 echo "📦 Building ${FUNCTION_NAME} Lambda package..."
 rm -rf $BUILD_DIR
@@ -13,7 +13,7 @@ mkdir -p $BUILD_DIR
 cp $LAMBDA_DIR/handler.py $BUILD_DIR/
 
 # Copy shared source code
-cp -r src $BUILD_DIR/
+cp -r ../src $BUILD_DIR/
 
 # Install dependencies
 if [ -f "${LAMBDA_DIR}/requirements.txt" ]; then
@@ -23,12 +23,12 @@ fi
 # Create zip
 cd $BUILD_DIR
 zip -r ../${FUNCTION_NAME}.zip . -q
-cd ../../..
+cd ../..
 
 echo "📤 Deploying to AWS Lambda..."
 aws lambda update-function-code \
     --function-name $FUNCTION_NAME \
-    --zip-file fileb://deploy/.build/${FUNCTION_NAME}.zip \
+    --zip-file fileb://.build/${FUNCTION_NAME}.zip \
     --no-cli-pager
 
 echo "✅ ${FUNCTION_NAME} deployed successfully!"

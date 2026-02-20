@@ -2,6 +2,7 @@ import json
 from typing import Any, Dict
 
 from src.db.rds_main import get_connection
+from src.utils.customer_public_profile import track_provider_interaction
 from pymysql.err import IntegrityError
 
 
@@ -191,6 +192,7 @@ def handler(event, context):
                         400,
                         {"message": "Provider ID does not match the assigned provider for this job"}
                     )
+                completed_provider_id = record["assigned_provider_id"]
                 
             else:
                 # Booking-based review
@@ -222,6 +224,7 @@ def handler(event, context):
                         400,
                         {"message": "Provider ID does not match the assigned provider for this booking"}
                     )
+                completed_provider_id = record["provider_id"]
 
             # 8) Insert the review into customer_provider_reviews
             sql = """
@@ -242,6 +245,14 @@ def handler(event, context):
             )
             conn.commit()
             review_id = cur.lastrowid
+            track_provider_interaction(
+                conn=conn,
+                provider_id=completed_provider_id,
+                customer_id=customer_id,
+                interaction_type="job_completed",
+                job_id=job_id,
+                booking_id=booking_id,
+            )
 
             # 9) Fetch the created review
             cur.execute(
