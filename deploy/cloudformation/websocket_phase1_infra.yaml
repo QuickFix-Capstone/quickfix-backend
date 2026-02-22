@@ -1,0 +1,47 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: QuickFix WebSocket API Phase 1 infrastructure (API, stage logging).
+
+Parameters:
+  ApiName:
+    Type: String
+    Default: quickfix-websocket
+  StageName:
+    Type: String
+    Default: prod
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+
+Resources:
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Ref ApiName
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: $request.body.action
+
+  ApiAccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/apigateway/${ApiName}
+      RetentionInDays: !Ref LogRetentionDays
+
+  WebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref WebSocketApi
+      StageName: !Ref StageName
+      AutoDeploy: true
+      DefaultRouteSettings:
+        DetailedMetricsEnabled: true
+        DataTraceEnabled: true
+        LoggingLevel: INFO
+      AccessLogSettings:
+        DestinationArn: !GetAtt ApiAccessLogGroup.Arn
+        Format: '{"requestId":"$context.requestId","routeKey":"$context.routeKey","status":"$context.status","error":"$context.error.message","ip":"$context.identity.sourceIp"}'
+
+Outputs:
+  WebSocketApiId:
+    Value: !Ref WebSocketApi
+  WebSocketEndpoint:
+    Value: !Sub wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}
