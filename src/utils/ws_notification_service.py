@@ -56,3 +56,47 @@ class NotificationService:
             )
         except Exception:
             pass
+
+    def notify_new_message(self, recipient_id: str, message_data: dict) -> None:
+        payload = {
+            "type": "event",
+            "event": "newMessage",
+            "data": message_data,
+        }
+        self.notify_users([recipient_id], payload)
+
+    def notify_typing(
+        self,
+        recipient_id: str,
+        sender_id: str,
+        sender_name: str,
+        conversation_id: str,
+        is_typing: bool,
+    ) -> None:
+        payload = {
+            "type": "event",
+            "event": "typing",
+            "data": {
+                "conversationId": conversation_id,
+                "userId": sender_id,
+                "userName": sender_name,
+                "isTyping": is_typing,
+            },
+        }
+        self.notify_users([recipient_id], payload)
+
+    def notify_read_receipt(
+        self,
+        recipient_id: str,
+        conversation_id: str,
+        read_by_user_id: str,
+    ) -> None:
+        payload = {
+            "type": "event",
+            "event": "conversationRead",
+            "data": {
+                "conversationId": conversation_id,
+                "readByUserId": read_by_user_id,
+            },
+        }
+        self.notify_users([recipient_id], payload)

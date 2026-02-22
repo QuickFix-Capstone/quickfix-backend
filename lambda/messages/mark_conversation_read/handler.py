@@ -5,12 +5,16 @@ from typing import Any, Dict
 
 try:
     from src.db.rds_main import get_connection
+    from src.utils.ws_notification_service import NotificationService
+    from src.utils.websocket_context import get_user_cognito_sub_by_app_id
 except ModuleNotFoundError:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, "../../.."))
     if project_root not in sys.path:
         sys.path.append(project_root)
     from src.db.rds_main import get_connection
+    from src.utils.ws_notification_service import NotificationService
+    from src.utils.websocket_context import get_user_cognito_sub_by_app_id
 
 import boto3
 
@@ -127,6 +131,19 @@ def handler(event, context):
     except Exception as e:
         print(f"DynamoDB error: {e}")
         return _response(500, {"message": "Failed to mark conversation as read"})
+
+    other_user_id = updated_conversation.get("otherUserId")
+    other_user_type = updated_conversation.get("otherUserType")
+    recipient_sub = get_user_cognito_sub_by_app_id(str(other_user_id), other_user_type or "customer")
+    if recipient_sub:
+        try:
+            NotificationService().notify_read_receipt(
+                recipient_sub,
+                conversation_id=conversation_id,
+                read_by_user_id=user_id,
+            )
+        except Exception as exc:
+            print(f"Failed to send conversationRead websocket notification: {exc}")
 
     # 5. Return success response
     return _response(200, {

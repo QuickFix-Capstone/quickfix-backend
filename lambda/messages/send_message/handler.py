@@ -7,6 +7,8 @@ from typing import Any, Dict
 try:
     from src.db.rds_main import get_connection
     from src.utils.customer_public_profile import track_provider_interaction
+    from src.utils.ws_notification_service import NotificationService
+    from src.utils.websocket_context import get_user_cognito_sub_by_app_id
 except ModuleNotFoundError:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, "../../.."))
@@ -14,6 +16,8 @@ except ModuleNotFoundError:
         sys.path.append(project_root)
     from src.db.rds_main import get_connection
     from src.utils.customer_public_profile import track_provider_interaction
+    from src.utils.ws_notification_service import NotificationService
+    from src.utils.websocket_context import get_user_cognito_sub_by_app_id
 
 import boto3
 
@@ -146,6 +150,7 @@ def handler(event, context):
         
         conversation = conv_response['Item']
         other_user_id = conversation.get('otherUserId')
+        other_user_type = conversation.get("otherUserType")
 
     except Exception as e:
         print(f"DynamoDB error checking conversation: {e}")
@@ -223,6 +228,25 @@ def handler(event, context):
         return _response(500, {"message": "Failed to send message"})
 
     # 7. Return success response
+    recipient_sub = get_user_cognito_sub_by_app_id(str(other_user_id), other_user_type or "customer")
+    if recipient_sub:
+        try:
+            NotificationService().notify_new_message(
+                recipient_sub,
+                {
+                    "conversationId": conversation_id,
+                    "messageId": timestamp,
+                    "senderId": user_id,
+                    "senderName": user_name,
+                    "senderType": user_type,
+                    "text": text,
+                    "timestamp": timestamp,
+                    "createdAt": created_at,
+                },
+            )
+        except Exception as exc:
+            print(f"Failed to send newMessage websocket notification: {exc}")
+
     return _response(201, {
         "messageId": timestamp,
         "conversationId": conversation_id,
