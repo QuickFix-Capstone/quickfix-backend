@@ -224,7 +224,7 @@ def handler(event, context):
                     cur.execute(
                         """
                         UPDATE jobs 
-                        SET status = 'assigned', assigned_provider_id = %s 
+                        SET status = 'assigned', assigned_provider_id = %s, assigned_at = NOW()
                         WHERE job_id = %s
                         """,
                         (app_row["provider_id"], job_id)

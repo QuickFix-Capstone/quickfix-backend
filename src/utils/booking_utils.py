@@ -130,10 +130,11 @@ def convert_booking_to_job(booking_id: int, conn) -> dict:
                 status,
                 assigned_provider_id,
                 booking_id,
+                assigned_at,
                 created_at,
                 updated_at
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW()
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), NOW()
             )
         """, (
             booking['customer_id'],
