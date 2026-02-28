@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 try:
     from src.db.rds_main import get_connection
     from src.utils.ws_notification_service import NotificationService
+    from src.utils.customer_public_profile import track_provider_interaction
 except ModuleNotFoundError:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(current_dir, "../../.."))
@@ -14,6 +15,7 @@ except ModuleNotFoundError:
         sys.path.append(project_root)
     from src.db.rds_main import get_connection
     from src.utils.ws_notification_service import NotificationService
+    from src.utils.customer_public_profile import track_provider_interaction
 
 
 def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -194,6 +196,14 @@ def handler(event, context):
             if not app_row:
                 return _response(404, {"message": "Application not found"})
 
+            track_provider_interaction(
+                conn=conn,
+                provider_id=app_row["provider_id"],
+                customer_id=customer_id,
+                interaction_type="job_application",
+                job_id=int(job_id),
+            )
+
             # 9. Check if application is already processed
             if app_row["status"] != "pending":
                 return _response(400, {"message": f"Application already {app_row['status']}"})
@@ -214,7 +224,7 @@ def handler(event, context):
                     cur.execute(
                         """
                         UPDATE jobs 
-                        SET status = 'assigned', assigned_provider_id = %s 
+                        SET status = 'assigned', assigned_provider_id = %s, assigned_at = NOW()
                         WHERE job_id = %s
                         """,
                         (app_row["provider_id"], job_id)
