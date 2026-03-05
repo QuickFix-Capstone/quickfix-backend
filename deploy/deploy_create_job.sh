@@ -7,7 +7,7 @@ set -e
 
 FUNCTION_NAME="create_job"
 BUILD_DIR=".build"
-LAMBDA_DIR="../lambda/jobs/create_job"
+LAMBDA_DIR="../lambda/Shared/create_job"
 
 echo "👉 Cleaning build dir..."
 rm -rf $BUILD_DIR

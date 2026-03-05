@@ -2,7 +2,7 @@
 set -e
 
 FUNCTION_NAME="notify_on_new_message"
-LAMBDA_DIR="lambda/notifications/notify_on_new_message"
+LAMBDA_DIR="lambda/System/notify_on_new_message"
 BUILD_DIR="deploy/.build/${FUNCTION_NAME}"
 
 echo "📦 Building ${FUNCTION_NAME} Lambda package..."

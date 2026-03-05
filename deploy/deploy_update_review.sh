@@ -2,7 +2,7 @@
 set -e
 
 FUNC_NAME="update_review"
-SRC_DIR="../lambda/reviews/update_review"
+SRC_DIR="../lambda/Customer/update_review"
 BUILD_DIR=".build/${FUNC_NAME}"
 ZIP_FILE="${FUNC_NAME}.zip"
 AWS_REGION="us-east-2"

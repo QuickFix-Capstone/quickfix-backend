@@ -2,7 +2,7 @@
 set -e
 
 FUNCTION_NAME="update_application_status"
-LAMBDA_DIR="lambda/jobs/update_application_status"
+LAMBDA_DIR="lambda/Shared/update_application_status"
 BUILD_DIR="deploy/.build/${FUNCTION_NAME}"
 
 echo "📦 Building ${FUNCTION_NAME} Lambda package..."

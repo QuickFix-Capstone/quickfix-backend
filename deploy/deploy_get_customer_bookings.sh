@@ -2,7 +2,7 @@
 set -e
 
 FUNC_NAME="get_customer_bookings"
-SRC_DIR="lambda/bookings/get_customer_bookings"
+SRC_DIR="lambda/Customer/get_customer_bookings"
 BUILD_DIR="deploy/.build/${FUNC_NAME}"
 ZIP_FILE="${FUNC_NAME}.zip"
 AWS_REGION="us-east-2"

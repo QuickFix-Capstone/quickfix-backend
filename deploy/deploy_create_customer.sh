@@ -2,7 +2,7 @@
 set -e
 
 FUNC_NAME="create_customer"
-SRC_DIR="../lambda/customers/create_customer"
+SRC_DIR="../lambda/Customer/create_customer"
 BUILD_DIR=".build/${FUNC_NAME}"
 ZIP_FILE="${FUNC_NAME}.zip"
 AWS_REGION="us-east-2"

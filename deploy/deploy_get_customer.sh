@@ -2,7 +2,7 @@
 set -e
 
 FUNC_NAME="get_customer"                       # 🔹 Name of Lambda in AWS
-SRC_DIR="../lambda/customers/get_customer"    # 🔹 Where handler.py lives
+SRC_DIR="../lambda/Customer/get_customer"    # 🔹 Where handler.py lives
 BUILD_DIR=".build/${FUNC_NAME}"
 ZIP_FILE="${FUNC_NAME}.zip"
 AWS_REGION="us-east-2"

@@ -2,7 +2,7 @@
 set -e
 
 FUNC_NAME="delete_customer_review_to_provider"
-SRC_DIR="../lambda/reviews/delete_customer_review_to_provider"
+SRC_DIR="../lambda/Customer/delete_customer_review_to_provider"
 BUILD_DIR=".build/${FUNC_NAME}"
 ZIP_FILE="${FUNC_NAME}.zip"
 AWS_REGION="us-east-2"

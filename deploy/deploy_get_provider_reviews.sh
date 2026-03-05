@@ -2,7 +2,7 @@
 set -e
 
 FUNC_NAME="get_provider_reviews"
-SRC_DIR="../lambda/reviews/get_provider_reviews"
+SRC_DIR="../lambda/ServiceProvider/get_provider_reviews"
 BUILD_DIR=".build/${FUNC_NAME}"
 ZIP_FILE="${FUNC_NAME}.zip"
 AWS_REGION="us-east-2"

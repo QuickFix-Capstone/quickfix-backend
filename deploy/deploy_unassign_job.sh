@@ -2,7 +2,7 @@
 set -e
 
 FUNCTION_NAME="unassign_job"
-LAMBDA_DIR="lambda/jobs/unassign_job"
+LAMBDA_DIR="lambda/ServiceProvider/unassign_job"
 BUILD_DIR="deploy/.build/${FUNCTION_NAME}"
 
 echo "📦 Building ${FUNCTION_NAME} Lambda package..."

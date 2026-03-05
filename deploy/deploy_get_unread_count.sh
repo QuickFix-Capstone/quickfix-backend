@@ -2,7 +2,7 @@
 set -e
 
 FUNCTION_NAME="get_unread_count"
-LAMBDA_DIR="lambda/notifications/get_unread_count"
+LAMBDA_DIR="lambda/Shared/get_unread_count"
 BUILD_DIR="deploy/.build/${FUNCTION_NAME}"
 
 echo "📦 Building ${FUNCTION_NAME} Lambda package..."

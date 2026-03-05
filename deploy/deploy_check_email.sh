@@ -2,7 +2,7 @@
 set -e
 
 FUNC_NAME="check_email"
-SRC_DIR="../lambda/customers/check_email"
+SRC_DIR="../lambda/System/check_email"
 BUILD_DIR=".build/${FUNC_NAME}"
 ZIP_FILE="${FUNC_NAME}.zip"
 AWS_REGION="us-east-2"

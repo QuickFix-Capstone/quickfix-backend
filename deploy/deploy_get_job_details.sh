@@ -7,7 +7,7 @@ set -e
 
 FUNCTION_NAME="get_job_details"
 BUILD_DIR=".build"
-LAMBDA_DIR="../lambda/jobs/get_job_details"
+LAMBDA_DIR="../lambda/Shared/get_job_details"
 
 echo "👉 Cleaning build dir..."
 rm -rf $BUILD_DIR

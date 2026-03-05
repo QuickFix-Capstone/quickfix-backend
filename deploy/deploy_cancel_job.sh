@@ -7,7 +7,7 @@ set -e
 
 FUNCTION_NAME="cancel_job"
 BUILD_DIR=".build"
-LAMBDA_DIR="../lambda/jobs/cancel_job"
+LAMBDA_DIR="../lambda/Shared/cancel_job"
 
 echo "👉 Cleaning build dir..."
 rm -rf $BUILD_DIR

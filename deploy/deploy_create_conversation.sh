@@ -2,7 +2,7 @@
 set -e
 
 FUNCTION_NAME="create_conversation"
-LAMBDA_DIR="lambda/messages/create_conversation"
+LAMBDA_DIR="lambda/Shared/create_conversation"
 BUILD_DIR="deploy/.build/${FUNCTION_NAME}"
 
 echo "📦 Building ${FUNCTION_NAME} Lambda package..."
