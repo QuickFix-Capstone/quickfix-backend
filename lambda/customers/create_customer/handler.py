@@ -193,6 +193,16 @@ def handler(event, context):
             )
             conn.commit()
             new_id = cur.lastrowid
+            cur.execute(
+                """
+                SELECT customer_id, first_name, last_name, email, created_at
+                FROM customers
+                WHERE customer_id = %s
+                LIMIT 1
+                """,
+                (new_id,),
+            )
+            created_customer = cur.fetchone()
 
         # 3) Add user to Cognito customer group
         # Try to extract email from JWT first, fallback to request body
@@ -213,10 +223,15 @@ def handler(event, context):
             {
                 "message": "Customer created successfully",
                 "customer": {
-                    "customer_id": new_id,
-                    "first_name": data.get("first_name"),
-                    "last_name": data.get("last_name"),
-                    "email": data.get("email"),
+                    "customer_id": created_customer["customer_id"] if created_customer else new_id,
+                    "first_name": created_customer["first_name"] if created_customer else data.get("first_name"),
+                    "last_name": created_customer["last_name"] if created_customer else data.get("last_name"),
+                    "email": created_customer["email"] if created_customer else data.get("email"),
+                    "created_at": (
+                        created_customer["created_at"].isoformat()
+                        if created_customer and created_customer.get("created_at")
+                        else None
+                    ),
                 },
             },
         )

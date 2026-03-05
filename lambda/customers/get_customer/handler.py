@@ -72,7 +72,7 @@ def handler(event, context):
             # First try cognito_sub → most reliable
             sql = """
                 SELECT customer_id, first_name, last_name, email,
-                       phone, address, city, state, postal_code, cognito_sub, avatar_url
+                       phone, address, city, state, postal_code, cognito_sub, avatar_url, created_at
                 FROM customers
                 WHERE cognito_sub = %s OR email = %s
                 LIMIT 1
@@ -97,6 +97,7 @@ def handler(event, context):
             "postal_code": row["postal_code"],
             "cognito_sub": row["cognito_sub"],
             "avatar_url": row["avatar_url"],
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
         }
 
         return _response(200, {"customer": customer})
