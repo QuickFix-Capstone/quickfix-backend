@@ -348,7 +348,7 @@ List all conversations for the authenticated user, sorted by most recent message
 
 ### 5.4 `markRead`
 
-Mark a conversation as read—resets `unreadCount` to `0`.
+Mark a conversation as read. This resets `unreadCount` to `0`, persists per-message read state, and returns the newest message confirmed as read.
 
 **Request:**
 ```json
@@ -374,12 +374,15 @@ Mark a conversation as read—resets `unreadCount` to `0`.
   "success": true,
   "data": {
     "conversationId": "conv-uuid-123",
-    "unreadCount": 0
+    "unreadCount": 0,
+    "lastReadMessageId": "1704384000000",
+    "readAt": 1704384050000
   }
 }
 ```
 
 **Side Effects:**
+- The backend updates `readBy` on unread messages in this conversation
 - The other user receives a **`conversationRead`** push event
 
 ---
@@ -492,14 +495,18 @@ Received when the other user reads your messages (i.e. they called `markRead`).
   "event": "conversationRead",
   "data": {
     "conversationId": "conv-uuid-123",
-    "readByUserId": "7"
+    "readByUserId": "7",
+    "lastReadMessageId": "1704384000000",
+    "readAt": 1704384050000
   }
 }
 ```
 
 **Frontend Actions:**
-- Show read receipt indicators (e.g. double checkmarks) on your sent messages
+- Use `lastReadMessageId` to mark your sent messages up to that message as read
+- Add `readByUserId` to the local `readBy` array for those messages
 - Update message status from "delivered" to "read"
+- Ignore the event if `lastReadMessageId` is missing or the conversation is not active
 
 ---
 
@@ -830,8 +837,25 @@ function MessagingPage() {
     });
 
     const unsubRead = ws.on('conversationRead', (data) => {
-      console.log(`${data.readByUserId} read conversation ${data.conversationId}`);
-      // Update your UI to show read receipts
+      if (data.conversationId !== activeConvId) return;
+      if (!data.lastReadMessageId) return;
+
+      setMessages(prev =>
+        prev.map(message => {
+          const isOwnMessage = String(message.senderId) === String(currentUserId);
+          const isRead = Number(message.messageId) <= Number(data.lastReadMessageId);
+          if (!isOwnMessage || !isRead) return message;
+
+          const readBy = new Set(message.readBy || []);
+          readBy.add(String(data.readByUserId));
+
+          return {
+            ...message,
+            readBy: [...readBy],
+            readAt: data.readAt ?? message.readAt,
+          };
+        })
+      );
     });
 
     return () => {

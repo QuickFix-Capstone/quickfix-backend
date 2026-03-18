@@ -301,7 +301,7 @@ async function loadMoreMessages(conversationId, oldestTimestamp, token) {
 
 ### 5. Mark Conversation as Read
 
-Reset the unread count for a conversation to 0.
+Reset the unread count for a conversation to 0 and persist message-level read receipts.
 
 **Endpoint**: `PUT /messages/conversations/{conversationId}/read`
 
@@ -313,9 +313,17 @@ Reset the unread count for a conversation to 0.
 {
   "conversationId": "550e8400-e29b-41d4-a716-446655440000",
   "unreadCount": 0,
+  "lastReadMessageId": "1704384000000",
+  "readAt": 1704384050000,
   "message": "Conversation marked as read"
 }
 ```
+
+**Read Receipt Notes**:
+- `lastReadMessageId` is the newest message confirmed as read
+- `readAt` is the server timestamp in milliseconds
+- The backend also updates `readBy` on unread messages in `quickfix_messages`
+- If your app also uses websocket messaging, the other participant should receive a matching `conversationRead` push event
 
 **React Example**:
 ```javascript
