@@ -123,3 +123,101 @@ def test_websocket_mark_read_returns_enriched_payload(monkeypatch):
     assert notifications["kwargs"]["conversation_id"] == "conv-1"
     assert notifications["kwargs"]["last_read_message_id"] == "1003"
     assert notifications["kwargs"]["read_at"] == 1234567890
+
+
+def test_http_mark_conversation_read_converts_provider_id_to_string(monkeypatch):
+    module = _load_module("http_mark_read_handler", "lambda/messages/mark_conversation_read/handler.py")
+
+    class FakeCursor:
+        def __init__(self):
+            self._results = [None, {"provider_id": 42}]
+
+        def execute(self, query, params):
+            return None
+
+        def fetchone(self):
+            return self._results.pop(0)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeConnection:
+        def cursor(self):
+            return FakeCursor()
+
+        def close(self):
+            return None
+
+    captured = {}
+
+    class FakeConversationsTable:
+        def update_item(self, **kwargs):
+            captured["key"] = kwargs["Key"]
+            return {"Attributes": {"otherUserId": "7", "otherUserType": "customer"}}
+
+    notifications = {}
+
+    class FakeNotificationService:
+        def notify_read_receipt(self, recipient_id, **kwargs):
+            notifications["recipient_id"] = recipient_id
+            notifications["kwargs"] = kwargs
+
+    monkeypatch.setattr(module, "get_connection", lambda: FakeConnection())
+    monkeypatch.setattr(module, "conversations_table", FakeConversationsTable())
+    monkeypatch.setattr(module, "messages_table", object())
+    monkeypatch.setattr(module, "mark_messages_read", lambda *args, **kwargs: ("1003", 1234567890))
+    monkeypatch.setattr(module, "get_user_cognito_sub_by_app_id", lambda user_id, user_type: "recipient-sub")
+    monkeypatch.setattr(module, "NotificationService", lambda: FakeNotificationService())
+
+    event = {
+        "requestContext": {"authorizer": {"jwt": {"claims": {"sub": "cognito-1"}}}},
+        "pathParameters": {"conversationId": "conv-1"},
+    }
+
+    response = module.handler(event, None)
+
+    assert response["statusCode"] == 200
+    assert captured["key"] == {"userId": "42", "conversationId": "conv-1"}
+    assert notifications["recipient_id"] == "recipient-sub"
+    assert notifications["kwargs"]["read_by_user_id"] == "42"
+
+
+def test_get_user_identity_converts_provider_id_to_string(monkeypatch):
+    from src.utils import websocket_context
+
+    class FakeCursor:
+        def __init__(self):
+            self._results = [None, {"provider_id": 42, "name": "Provider Name"}]
+
+        def execute(self, query, params):
+            return None
+
+        def fetchone(self):
+            return self._results.pop(0)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeConnection:
+        def cursor(self):
+            return FakeCursor()
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(websocket_context, "get_connection", lambda: FakeConnection())
+
+    identity = websocket_context.get_user_identity("cognito-1")
+
+    assert identity == {
+        "cognito_sub": "cognito-1",
+        "app_user_id": "42",
+        "user_type": "provider",
+        "user_name": "Provider Name",
+    }

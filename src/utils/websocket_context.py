@@ -103,7 +103,7 @@ def get_user_identity(cognito_sub: str) -> Optional[Dict[str, Any]]:
             if provider:
                 return {
                     "cognito_sub": cognito_sub,
-                    "app_user_id": provider["provider_id"],
+                    "app_user_id": str(provider["provider_id"]),
                     "user_type": "provider",
                     "user_name": provider["name"],
                 }

@@ -90,8 +90,8 @@ class NotificationService:
         recipient_id: str,
         conversation_id: str,
         read_by_user_id: str,
-        last_read_message_id: str | None = None,
-        read_at: int | None = None,
+        last_read_message_id: Optional[str] = None,
+        read_at: Optional[int] = None,
     ) -> None:
         payload = {
             "type": "event",

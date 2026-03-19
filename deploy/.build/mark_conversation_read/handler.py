@@ -103,7 +103,7 @@ def handler(event, context):
                 if not user_row:
                     return _response(404, {"message": "User not found"})
                 
-                user_id = user_row["provider_id"]
+                user_id = str(user_row["provider_id"])
 
     except Exception as e:
         print(f"Database error: {e}")
