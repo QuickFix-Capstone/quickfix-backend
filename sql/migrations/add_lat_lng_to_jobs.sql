@@ -1,0 +1,3 @@
+ALTER TABLE jobs
+  ADD COLUMN location_lat DECIMAL(10, 7) NULL,
+  ADD COLUMN location_lng DECIMAL(10, 7) NULL;

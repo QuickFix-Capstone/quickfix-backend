@@ -62,6 +62,8 @@ def handler(event, context):
       "location_city": "Toronto",
       "location_state": "ON",
       "location_zip": "M5H 1J9",
+      "location_lat": 43.6532,  # optional
+      "location_lng": -79.3832,  # optional
       "preferred_date": "2026-01-15",  # optional
       "preferred_time": "14:00",  # optional
       "budget_min": 100.00,  # optional
@@ -105,6 +107,8 @@ def handler(event, context):
     # 4. Validate budget range if provided
     budget_min = data.get("budget_min")
     budget_max = data.get("budget_max")
+    location_lat = data.get("location_lat")
+    location_lng = data.get("location_lng")
     
     if budget_min is not None and budget_max is not None:
         if budget_min > budget_max:
@@ -149,9 +153,10 @@ def handler(event, context):
             sql = """
                 INSERT INTO jobs
                     (customer_id, title, description, category, location_address,
-                     location_city, location_state, location_zip, preferred_date,
-                     preferred_time, budget_min, budget_max)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     location_city, location_state, location_zip,
+                     location_lat, location_lng,
+                     preferred_date, preferred_time, budget_min, budget_max)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             
             cur.execute(sql, (
@@ -163,6 +168,8 @@ def handler(event, context):
                 data.get("location_city"),
                 data.get("location_state"),
                 data.get("location_zip"),
+                location_lat,
+                location_lng,
                 data.get("preferred_date"),
                 data.get("preferred_time"),
                 budget_min,
@@ -177,6 +184,7 @@ def handler(event, context):
                 """
                 SELECT job_id, customer_id, title, description, category,
                        location_address, location_city, location_state, location_zip,
+                       location_lat, location_lng,
                        preferred_date, preferred_time, budget_min, budget_max,
                        status, assigned_provider_id, created_at, updated_at
                 FROM jobs
@@ -196,7 +204,9 @@ def handler(event, context):
                 "address": job_row["location_address"],
                 "city": job_row["location_city"],
                 "state": job_row["location_state"],
-                "zip": job_row["location_zip"]
+                "zip": job_row["location_zip"],
+                "lat": float(job_row["location_lat"]) if job_row["location_lat"] else None,
+                "lng": float(job_row["location_lng"]) if job_row["location_lng"] else None
             },
             "preferred_date": str(job_row["preferred_date"]) if job_row["preferred_date"] else None,
             "preferred_time": str(job_row["preferred_time"]) if job_row["preferred_time"] else None,
@@ -250,6 +260,8 @@ if __name__ == "__main__":
             "location_city": "Toronto",
             "location_state": "ON",
             "location_zip": "M5H 1J9",
+            "location_lat": 43.6532,
+            "location_lng": -79.3832,
             "preferred_date": "2026-01-15",
             "preferred_time": "14:00",
             "budget_min": 100.00,

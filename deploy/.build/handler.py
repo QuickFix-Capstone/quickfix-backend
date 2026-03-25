@@ -2,6 +2,8 @@ import json
 import sys
 import os
 from typing import Any, Dict
+from datetime import datetime, date
+from pymysql.err import IntegrityError
 
 try:
     from src.db.rds_main import get_connection
@@ -13,15 +15,31 @@ except ModuleNotFoundError:
     from src.db.rds_main import get_connection
 
 
+def _parse_body(event: Dict[str, Any]) -> Dict[str, Any]:
+    """Parse request body from API Gateway event."""
+    if "body" not in event:
+        return event
+
+    body = event["body"]
+
+    if isinstance(body, dict):
+        return body
+
+    if isinstance(body, str):
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            raise ValueError("Invalid JSON body")
+
+    raise ValueError("Unsupported body format")
+
+
 def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
     """Standard API Gateway response."""
     return {
         "statusCode": status_code,
         "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "Content-Type,Authorization",
-            "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS"
+            "Content-Type": "application/json"
         },
         "body": json.dumps(body),
     }
@@ -29,23 +47,34 @@ def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
 
 def handler(event, context):
     """
-    Get detailed information about a specific job.
+    Create a new job posting.
     
     Authentication:
     - Requires JWT authorizer (Cognito)
     - cognito_sub extracted from JWT claims
     
-    Path Parameter:
-    - job_id: ID of the job to retrieve
-    
-    Authorization:
-    - Customer can only view their own jobs
+    Expected JSON input:
+    {
+      "title": "Fix leaking kitchen sink",
+      "description": "Sink has been leaking for 2 days...",
+      "category": "plumber",
+      "location_address": "123 Main St",
+      "location_city": "Toronto",
+      "location_state": "ON",
+      "location_zip": "M5H 1J9",
+      "location_lat": 43.6532,  # optional
+      "location_lng": -79.3832,  # optional
+      "preferred_date": "2026-01-15",  # optional
+      "preferred_time": "14:00",  # optional
+      "budget_min": 100.00,  # optional
+      "budget_max": 150.00  # optional
+    }
     
     Returns:
-    - 200: Job details with provider info if assigned
+    - 201: Job created successfully
+    - 400: Invalid input
     - 401: Unauthorized
-    - 403: Forbidden (not customer's job)
-    - 404: Job not found or customer not found
+    - 404: Customer not found
     - 500: Server error
     """
     
@@ -59,20 +88,56 @@ def handler(event, context):
     if not cognito_sub:
         return _response(401, {"message": "Unauthorized: Missing cognito_sub"})
 
-    # 2. Extract job_id from path parameters
+    # 2. Parse request body
     try:
-        job_id = event["pathParameters"]["job_id"]
-    except (KeyError, TypeError):
-        return _response(400, {"message": "Missing job_id in path"})
+        data = _parse_body(event)
+    except ValueError as e:
+        return _response(400, {"message": str(e)})
 
-    # 3. Connect to database
+    # 3. Validate required fields
+    required_fields = ["title", "description", "location_address"]
+    
+    missing = [f for f in required_fields if not data.get(f)]
+    if missing:
+        return _response(400, {
+            "message": "Missing required fields",
+            "missing": missing
+        })
+
+    # 4. Validate budget range if provided
+    budget_min = data.get("budget_min")
+    budget_max = data.get("budget_max")
+    location_lat = data.get("location_lat")
+    location_lng = data.get("location_lng")
+    
+    if budget_min is not None and budget_max is not None:
+        if budget_min > budget_max:
+            return _response(400, {"message": "budget_min cannot be greater than budget_max"})
+
+    # 5. Validate preferred date if provided
+    if data.get("preferred_date"):
+        try:
+            preferred_date = datetime.strptime(data["preferred_date"], "%Y-%m-%d").date()
+            if preferred_date < date.today():
+                return _response(400, {"message": "Preferred date must be in the future"})
+        except ValueError:
+            return _response(400, {"message": "Invalid date format. Use YYYY-MM-DD"})
+
+    # 6. Validate preferred time format if provided
+    if data.get("preferred_time"):
+        try:
+            datetime.strptime(data["preferred_time"], "%H:%M")
+        except ValueError:
+            return _response(400, {"message": "Invalid time format. Use HH:MM"})
+
+    # 7. Connect to database
     conn = get_connection()
     if not conn:
         return _response(500, {"message": "Database connection failed"})
 
     try:
         with conn.cursor() as cur:
-            # 4. Get customer_id from cognito_sub
+            # 8. Get customer_id from cognito_sub
             cur.execute(
                 "SELECT customer_id FROM customers WHERE cognito_sub = %s",
                 (cognito_sub,)
@@ -84,38 +149,54 @@ def handler(event, context):
             
             customer_id = customer_row["customer_id"]
 
-            # 5. Get job details with provider info and application count
+            # 9. Create job
+            sql = """
+                INSERT INTO jobs
+                    (customer_id, title, description, category, location_address,
+                     location_city, location_state, location_zip,
+                     location_lat, location_lng,
+                     preferred_date, preferred_time, budget_min, budget_max)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            
+            cur.execute(sql, (
+                customer_id,
+                data["title"],
+                data["description"],
+                data.get("category"),
+                data["location_address"],
+                data.get("location_city"),
+                data.get("location_state"),
+                data.get("location_zip"),
+                location_lat,
+                location_lng,
+                data.get("preferred_date"),
+                data.get("preferred_time"),
+                budget_min,
+                budget_max
+            ))
+            
+            conn.commit()
+            job_id = cur.lastrowid
+
+            # 10. Fetch created job
             cur.execute(
                 """
-                SELECT 
-                    j.job_id, j.customer_id, j.title, j.description, j.category,
-                    j.location_address, j.location_city, j.location_state, j.location_zip,
-                    j.preferred_date, j.preferred_time, j.budget_min, j.budget_max,
-                    j.status, j.assigned_provider_id, j.created_at, j.updated_at,
-                    sp.name as provider_name,
-                    sp.average_rating as provider_average_rating,
-                    sp.phone_number as provider_phone,
-                    COUNT(ja.application_id) as application_count
-                FROM jobs j
-                LEFT JOIN service_providers sp ON j.assigned_provider_id COLLATE utf8mb4_0900_ai_ci = sp.provider_id
-                LEFT JOIN job_applications ja ON j.job_id = ja.job_id
-                WHERE j.job_id = %s
-                GROUP BY j.job_id
+                SELECT job_id, customer_id, title, description, category,
+                       location_address, location_city, location_state, location_zip,
+                       location_lat, location_lng,
+                       preferred_date, preferred_time, budget_min, budget_max,
+                       status, assigned_provider_id, created_at, updated_at
+                FROM jobs
+                WHERE job_id = %s
                 """,
                 (job_id,)
             )
             job_row = cur.fetchone()
-            
-            if not job_row:
-                return _response(404, {"message": "Job not found"})
-            
-            # 6. Authorization check - customer can only view their own jobs
-            if job_row["customer_id"] != customer_id:
-                return _response(403, {"message": "Forbidden: You can only view your own jobs"})
 
-        # 7. Format response
         job = {
             "job_id": job_row["job_id"],
+            "customer_id": job_row["customer_id"],
             "title": job_row["title"],
             "description": job_row["description"],
             "category": job_row["category"],
@@ -123,7 +204,9 @@ def handler(event, context):
                 "address": job_row["location_address"],
                 "city": job_row["location_city"],
                 "state": job_row["location_state"],
-                "zip": job_row["location_zip"]
+                "zip": job_row["location_zip"],
+                "lat": float(job_row["location_lat"]) if job_row["location_lat"] else None,
+                "lng": float(job_row["location_lng"]) if job_row["location_lng"] else None
             },
             "preferred_date": str(job_row["preferred_date"]) if job_row["preferred_date"] else None,
             "preferred_time": str(job_row["preferred_time"]) if job_row["preferred_time"] else None,
@@ -132,28 +215,22 @@ def handler(event, context):
                 "max": float(job_row["budget_max"]) if job_row["budget_max"] else None
             },
             "status": job_row["status"],
-            "application_count": job_row["application_count"],
+            "assigned_provider_id": job_row["assigned_provider_id"],
             "created_at": job_row["created_at"].isoformat() if job_row["created_at"] else None,
             "updated_at": job_row["updated_at"].isoformat() if job_row["updated_at"] else None
         }
 
-        # 8. Add provider details if job is assigned
-        if job_row["assigned_provider_id"]:
-            job["assigned_provider"] = {
-                "provider_id": job_row["assigned_provider_id"],
-                "name": job_row["provider_name"],
-                "rating": float(job_row["provider_average_rating"]) if job_row["provider_average_rating"] else None,
-                "phone": job_row["provider_phone"]
-            }
-        else:
-            job["assigned_provider"] = None
-
-        return _response(200, {
+        return _response(201, {
+            "message": "Job created successfully",
             "job": job
         })
 
+    except IntegrityError as e:
+        print(f"Integrity error: {e}")
+        return _response(400, {"message": "Failed to create job due to data constraint"})
+
     except Exception as e:
-        print(f"Error fetching job details: {e}")
+        print(f"Error creating job: {e}")
         return _response(500, {"message": "Internal server error"})
 
     finally:
@@ -165,7 +242,6 @@ def handler(event, context):
 
 # Local testing
 if __name__ == "__main__":
-    # Test event with mock JWT claims
     test_event = {
         "requestContext": {
             "authorizer": {
@@ -176,12 +252,24 @@ if __name__ == "__main__":
                 }
             }
         },
-        "pathParameters": {
-            "job_id": "1"
-        }
+        "body": json.dumps({
+            "title": "Fix leaking kitchen sink",
+            "description": "Sink has been leaking for 2 days, need urgent repair",
+            "category": "plumber",
+            "location_address": "123 Main St",
+            "location_city": "Toronto",
+            "location_state": "ON",
+            "location_zip": "M5H 1J9",
+            "location_lat": 43.6532,
+            "location_lng": -79.3832,
+            "preferred_date": "2026-01-15",
+            "preferred_time": "14:00",
+            "budget_min": 100.00,
+            "budget_max": 150.00
+        })
     }
 
-    print("🔍 Running local test for get_job_details.handler()...")
+    print("🔍 Running local test for create_job.handler()...")
     result = handler(test_event, None)
     print("Response:")
     print(json.dumps(result, indent=2))
