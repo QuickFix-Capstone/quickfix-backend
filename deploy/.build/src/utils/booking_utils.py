@@ -87,6 +87,8 @@ def convert_booking_to_job(booking_id: int, conn) -> dict:
                 service_city,
                 service_state,
                 service_postal_code,
+                service_lat,
+                service_lng,
                 estimated_price,
                 job_id,
                 status
@@ -123,6 +125,8 @@ def convert_booking_to_job(booking_id: int, conn) -> dict:
                 location_city,
                 location_state,
                 location_zip,
+                location_lat,
+                location_lng,
                 preferred_date,
                 preferred_time,
                 budget_min,
@@ -134,7 +138,7 @@ def convert_booking_to_job(booking_id: int, conn) -> dict:
                 created_at,
                 updated_at
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), NOW()
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), NOW()
             )
         """, (
             booking['customer_id'],
@@ -145,6 +149,8 @@ def convert_booking_to_job(booking_id: int, conn) -> dict:
             booking['service_city'],
             booking['service_state'],
             booking['service_postal_code'],
+            booking['service_lat'],
+            booking['service_lng'],
             booking['scheduled_date'],
             booking['scheduled_time'],
             booking['estimated_price'],  # budget_min
